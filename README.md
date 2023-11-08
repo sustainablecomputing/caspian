@@ -4,6 +4,7 @@ Caspian is a controller for multi-cluster kubernetes environment that decides on
 
 ![Caspina-architecture](https://github.com/sustainablecomputing/Caspian/assets/34821570/9ddebe06-732c-411a-9462-9effa59acd77)
 
+
 Caspian works in a time slotted manner and has the following main components:
 - **Carbon Monitoring:** It periodically fetches the predicted values of carbon intensity of spoke clusters.  
 - **Green Scheduler:**   Based on the current and future values of carbon intensity, the status of workloads in the system, and available capacity of spoke clusters in the next T time slots, it calls its optimizer to obtain the best scheduling/placement for the workloads.  Once the Scheduler obtains the solution, it updates the spec of workloads to notify the multi-cluster manager about its decisions. 
