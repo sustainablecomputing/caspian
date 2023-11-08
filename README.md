@@ -18,6 +18,52 @@ Caspian uses MicroMCAD as a Workload queueing and multi-cluster management platf
 
 ##  Installation and Setup
 
+##  How to use it
+```
+apiVersion: workload.codeflare.dev/v1beta1
+kind: AppWrapper
+metadata:
+  namespace: default
+  name: aw1
+spec:
+  priority: 1
+  schedulingSpec:
+    minAvailable: 1
+    requeuing:
+      maxNumRequeuings: 5
+  sustainable:
+    runTime: 3
+    deadline: 2023-11-07T17:09:23-08:00
+  resources:
+    GenericItems:
+    - custompodresources:
+      - requests:
+          cpu: 3
+        replicas: 1
+      generictemplate:
+        apiVersion: v1
+        kind: Pod
+        metadata:
+          namespace: default
+          name: aw1-1
+          labels:
+            workload.codeflare.dev/namespace: default
+            workload.codeflare.dev: aw1
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: busybox
+              image: busybox
+              command: ["sh", "-c", "sleep 45"]
+              resources:
+                requests:
+                  cpu: 3
+                limits:
+                  cpu: 3
+```
+
+ 
+
 
 ## Publications
 
