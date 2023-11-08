@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"os"
 
+	core "github.com/sustainablecomputing/caspian/core"
 	mcadv1beta1 "github.com/tayebehbahreini/mcad/api/v1beta1"
-	core "github.ibm.com/tbahreini/caspian-mcad/core"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -146,4 +146,3 @@ func buildConfigWithContextFromFlags(context string, kubeconfigPath string) (*re
 			CurrentContext: context,
 		}).ClientConfig()
 }
-
