@@ -17,3 +17,15 @@ Caspian uses MicroMCAD as a Workload queueing and multi-cluster management platf
 ![Caspian+MCAD](https://media.github.ibm.com/user/356384/files/6982b6a0-b3ae-4a44-b231-e1eab235963b)
 
 ##  Installation and Setup
+
+
+## Publications
+
+- Scheduling on a single cluster:
+  - Tayebeh Bahreini, Asser Tantawi and Alaa Youssef, "An Approximation Algorithm for Minimizing the Cloud Carbon Footprint through Workload Scheduling", Proc. of the _*IEEE International Conference on Cloud Computing (IEEE CLOUD)*_, 2022 ([link](https://ieeexplore.ieee.org/abstract/document/9860626/)).
+  
+ 
+- Scheduling and placement over multi clusters:
+  - Tayebeh Bahreini, Asser Tantawi and Alaa Youssef, "A Carbon-aware Workload Dispatcher in Cloud Computing Systems", Proc. of the _*IEEE International Conference on Cloud Computing (IEEE CLOUD)*_, 2023 ([link](https://ieeexplore.ieee.org/abstract/document/10255008)).
+  
+ 
