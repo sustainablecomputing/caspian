@@ -1,7 +1,7 @@
 package core
 
 var (
-	DefaultTValue          = 24
-	DefaultLengthValue     = 3600
-	DefaultRevisitDuration = 60
+	DefaultT           = 24
+	DefaultSlotLength  = 3600
+	DefaultRevisitTime = 60
 )

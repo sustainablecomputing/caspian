@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/sustainablecomputing/caspian/core"
-	"github.com/sustainablecomputing/caspian/dispatcher"
 	"github.com/sustainablecomputing/caspian/monitoring"
+	"github.com/sustainablecomputing/caspian/scheduler"
 )
 
 func main() {
@@ -15,7 +15,7 @@ func main() {
 	dirname, _ := os.UserHomeDir()
 	kube_config := dirname + "/.kube/config"
 	hub_contxt := "kind-hub"
-	D := dispatcher.NewDispatcher(kube_config, hub_contxt)
+	D := scheduler.NewScheduler(kube_config, hub_contxt)
 	M := monitoring.NewMonitor(kube_config, hub_contxt)
 
 	for {
