@@ -19,10 +19,53 @@ Caspian uses MicroMCAD as a Workload queueing and multi-cluster management platf
 ##  Installation and Setup
 
 ##  How to use it
+Once Caspian and MCAD are installed, you can deploy appwrappers in the hub clusters and watch their status.
+Caspian looks at the specifications of each appwrapper to determine the total CPU/GPU requirement, the run time, and the deadline for executing the appwrapper. The example below shows an example of an appwrapper. under sustainale filed, you can specify the run time (in hours) and the deadline. If users does not fill these filed, Caspian by default assumes that the run time of the appwrapper is one hour and there is no deadline for finishing the appwrapper. 
 
+```
+apiVersion: workload.codeflare.dev/v1beta1
+kind: AppWrapper
+metadata:
+  namespace: default
+  name: aw1
+spec:
+  priority: 1
+  schedulingSpec:
+    minAvailable: 1
+    requeuing:
+      maxNumRequeuings: 5
+  sustainable:
+    runTime: 3
+    deadline: 2023-11-07T17:09:23-08:00
+  resources:
+    GenericItems:
+    - custompodresources:
+      - requests:
+          cpu: 3
+        replicas: 1
+      generictemplate:
+        apiVersion: v1
+        kind: Pod
+        metadata:
+          namespace: default
+          name: aw1-1
+          labels:
+            workload.codeflare.dev/namespace: default
+            workload.codeflare.dev: aw1
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: busybox
+              image: busybox
+              command: ["sh", "-c", "sleep 45"]
+              resources:
+                requests:
+                  cpu: 3
+                limits:
+                  cpu: 3
+ 
 
- <img width="410" alt="addfield" src="https://github.com/sustainablecomputing/caspian/assets/34821570/41219c3e-3245-4676-a9c2-74ac6e84d3fb">
-
+```
 
 
 ## Publications
