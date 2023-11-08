@@ -95,7 +95,7 @@ func (m Monitor) UpdateClusterInfo() error {
 // Retrive carbon intensity and update the carbon field of clusterinfo object
 func (m Monitor) UpdateCarbon(spoke core.Cluster) error {
 
-	I, _ := m.GetCarbonFromFile("./monitoring/" + spoke.GeoLocation + ".csv")
+	I, _ := m.GetCarbonFromFile("./monitoring/data/" + spoke.GeoLocation + ".csv")
 	patch := []interface{}{
 		map[string]interface{}{
 			"op":    "replace",
