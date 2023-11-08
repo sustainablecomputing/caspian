@@ -13,11 +13,13 @@ import (
 	mcadv1beta1 "github.com/tayebehbahreini/mcad/api/v1beta1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubectl/pkg/scheme"
 )
 
@@ -144,12 +146,12 @@ func (s *Scheduler) GetClustersInfo() {
 }
 
 // retrive an AW
-func (s *Scheduler) GetAppWrapper(name string) (unstructures.Unstructured, error) {
+func (s *Scheduler) GetAppWrapper(name string) (unstructured.Unstructured, error) {
 
 	result, err := s.dynamicClient.Resource(AWResource).Namespace(apiv1.NamespaceDefault).Get(context.Background(),
 		name, metav1.GetOptions{})
 	if err != nil {
-		return unstructures.Unstructured{}, err
+		return unstructured.Unstructured{}, err
 	}
 	return *result, err
 }
@@ -369,9 +371,9 @@ func aggregateRequests(appWrapper *mcadv1beta1.AppWrapper) core.Weights2 {
 }
 
 func buildConfigWithContextFromFlags(context string, kubeconfigPath string) (*rest.Config, error) {
-	return clientcms.NewNonInteractiveDeferredLoadingClientConfig(
-		&clientcms.ClientConfigLoadingRules{ExplicitPath: kubeconfigPath},
-		&clientcms.ConfigOverrides{
+	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfigPath},
+		&clientcmd.ConfigOverrides{
 			CurrentContext: context,
 		}).ClientConfig()
 }
