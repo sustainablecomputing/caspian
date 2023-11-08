@@ -43,8 +43,8 @@ func NewDispatcher(kube_config string, hub_contxt string) *Dispatcher {
 	d := &Dispatcher{
 		N:             0,
 		M:             0,
-		T:             core.DefaultTValue,
-		PeriodLength:  core.DefaultLengthValue,
+		T:             core.DefaultT,
+		PeriodLength:  core.DefaultSlotLength,
 		Jobs:          []core.Job{},
 		Clusters:      []core.Cluster{},
 		crdClient:     &rest.RESTClient{},
