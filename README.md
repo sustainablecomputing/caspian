@@ -5,7 +5,7 @@ Caspian is a controller in kubernetes environment that decides on scheduling and
 Caspian works in a time slotted manner and has the following main components:
 - **Carbon Monitoring:** It periodically fetches the predicted values of carbon intensity of spoke clusters.  
 - **Green Scheduler:**   Based on the current and future values of carbon intensity, the status of workloads in the system, and available capacity of spoke clusters in the next T time slots, it calls its optimizer to obtain the best scheduling/placement for the workloads.  Once the Scheduler obtains the solution, it updates the spec of workloads to notify the multi-cluster manager about its decisions. 
-- **Optimizer:** Contains an LP-based Algorithm to solve the carbon-aware scheduling/placement problem over multi clusters. Optimizer uses ![clp package] (https://github.com/lanl/clp) in its core. Clp  provides a Go interface to the COIN-OR Linear Programming (CLP) library, part of the COIN-OR (![COmputational INfrastructure for Operations Research](https://www.coin-or.org/)) suite.
+- **Optimizer:** Contains an LP-based Algorithm to solve the carbon-aware scheduling/placement problem over multi clusters. Optimizer uses [clp package](https://github.com/lanl/clp) in its core. Clp  provides a Go interface to the COIN-OR Linear Programming (CLP) librarywhich is part of the [COIN-OR](https://www.coin-or.org/) suite.
 
 
 ## Caspian and MCAD
