@@ -13,7 +13,7 @@ Caspian works in a time slotted manner and has the following main components:
 ## Caspian and MCAD
 Caspian uses MicroMCAD as a Workload queueing and multi-cluster management platform to dispatch workloads to the destination clusters. A summary of the interactions between MicroMCAD and Caspian is depicted below.
 
-![caspian-mcad](https://github.com/sustainablecomputing/caspian/assets/34821570/51b48c75-a509-4b56-9284-24e7206b8338)
+![caspian-mcad](https://github.com/sustainablecomputing/caspian/assets/34821570/32d1b7e5-c7eb-4cc8-8ce8-d1f1a87b0901)
 
 ##  Installation and Setup
 
