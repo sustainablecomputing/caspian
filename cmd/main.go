@@ -15,13 +15,13 @@ func main() {
 	dirname, _ := os.UserHomeDir()
 	kube_config := dirname + "/.kube/config"
 	hub_contxt := "kind-hub"
-	D := scheduler.NewScheduler(kube_config, hub_contxt)
+	S := scheduler.NewScheduler(kube_config, hub_contxt)
 	M := monitoring.NewMonitor(kube_config, hub_contxt)
 
 	for {
 		M.UpdateClusterInfo()
-		D.Run()
-		time.Sleep(period_length)
+		S.Schedule()
+		time.Sleep(100000 * period_length)
 	}
 
 }
