@@ -10,11 +10,9 @@ import (
 	core "github.com/sustainablecomputing/caspian/core"
 	mcadv1beta1 "github.com/tayebehbahreini/mcad/api/v1beta1"
 	apiv1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubectl/pkg/scheme"
@@ -23,19 +21,17 @@ import (
 var ClusterInfoResource = schema.GroupVersionResource{Group: mcadv1beta1.GroupVersion.Group,
 	Version: mcadv1beta1.GroupVersion.Version, Resource: "clusterinfo"}
 
-// A monitor instace contains a list of Clusters, a rest client, and a dynamic client.
+// A monitor instace contains a list of Clusters, and rest client
 type Monitor struct {
-	Spokes        []core.Cluster
-	dynamicClient dynamic.Interface
-	crdClient     *rest.RESTClient
+	Spokes    []core.Cluster
+	crdClient *rest.RESTClient
 }
 
 // NewMonior creates a Monitor instance and configures its clients.
 func NewMonitor(kube_config string, hub_contxt string) *Monitor {
 	m := &Monitor{
-		Spokes:        []core.Cluster{},
-		dynamicClient: nil,
-		crdClient:     &rest.RESTClient{},
+		Spokes:    []core.Cluster{},
+		crdClient: &rest.RESTClient{},
 	}
 	config, _ := buildConfigWithContextFromFlags(hub_contxt, kube_config)
 	crdConfig := *config
@@ -48,7 +44,7 @@ func NewMonitor(kube_config string, hub_contxt string) *Monitor {
 	if err != nil {
 		panic(err)
 	}
-	m.dynamicClient, err = dynamic.NewForConfig(&crdConfig)
+
 	if err != nil {
 		panic(err)
 	}
@@ -107,8 +103,10 @@ func (m Monitor) UpdateCarbon(spoke core.Cluster) error {
 	if err != nil {
 		panic(err)
 	}
-	ClusterInfoClient := m.dynamicClient.Resource(ClusterInfoResource).Namespace(apiv1.NamespaceDefault)
-	_, err = ClusterInfoClient.Patch(context.Background(), spoke.Name, types.JSONPatchType, payload, metav1.PatchOptions{})
+
+	err = m.crdClient.Patch(types.JSONPatchType).Resource("clusterinfo").Name(spoke.Name).
+		Namespace(apiv1.NamespaceDefault).Body(payload).Do(context.Background()).Error()
+
 	return err
 
 }
