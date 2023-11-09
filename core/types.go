@@ -14,11 +14,12 @@ type Cluster struct {
 }
 
 type Job struct {
-	Name       string
-	Deadline   int64
-	CPU        float64
-	RunTime    int64
-	RemainTime int64
+	Name            string
+	Deadline        int64
+	CPU             float64
+	RunTime         int64
+	RemainTime      int64
+	PreferedCluster string
 }
 
 type Weights map[v1.ResourceName]*inf.Dec
