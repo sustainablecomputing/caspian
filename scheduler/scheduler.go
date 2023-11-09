@@ -146,15 +146,18 @@ func (s *Scheduler) GetClustersInfo() {
 
 }
 
-// retrive an AW
+// find an AW
 func (s *Scheduler) IsValidAppWrapper(Name string) error {
-	err := s.crdClient.Get().Resource("appwrappers").Name(Name).Error()
+	err := s.crdClient.Get().Resource("appwrappers").
+		Namespace(apiv1.NamespaceDefault).Name(Name).Do(context.Background()).Error()
+
 	return err
 }
 
 // delete an AW
 func (s *Scheduler) DeleteAppWrapper(Name string) error {
-	err := s.crdClient.Delete().Resource("appwrappers").Name(Name).Error()
+	err := s.crdClient.Delete().Resource("appwrappers").
+		Namespace(apiv1.NamespaceDefault).Name(Name).Do(context.Background()).Error()
 	return err
 }
 
@@ -179,6 +182,9 @@ func (s *Scheduler) PutHoldOnAppWrapper(Name string) error {
 		}
 		err = s.crdClient.Patch(types.JSONPatchType).Resource("appwrappers").Name(Name).
 			Namespace(apiv1.NamespaceDefault).Body(payload).Do(context.Background()).Error()
+		if err == nil {
+			fmt.Println(Name, "\t Suspend ")
+		}
 
 		return err
 
@@ -212,6 +218,9 @@ func (s *Scheduler) ReleasHoldOnAppWrapper(Name string, TargetCluster string) er
 		}
 		err = s.crdClient.Patch(types.JSONPatchType).Resource("appwrappers").Name(Name).
 			Namespace(apiv1.NamespaceDefault).Body(payload).Do(context.Background()).Error()
+		if err == nil {
+			fmt.Println(Name, "\t \tScheduled on", TargetCluster)
+		}
 
 		return err
 
@@ -234,12 +243,12 @@ func (s *Scheduler) Run() {
 		fmt.Println("Job Name\t  \tDecision ")
 		for i := 0; i < s.N; i++ {
 
-			if Targets[i] >= 0 {
+			if Targets[i] < 0 {
 				s.PutHoldOnAppWrapper(s.Jobs[i].Name)
-				fmt.Println(s.Jobs[i].Name, "\t Suspend ")
+
 			} else {
 				s.ReleasHoldOnAppWrapper(s.Jobs[i].Name, s.Clusters[Targets[i]].Name)
-				fmt.Println(s.Jobs[i].Name, "\t \tScheduled on", s.Clusters[Targets[i]].Name)
+
 			}
 
 		}
@@ -275,12 +284,6 @@ func (s *Scheduler) APX() []int {
 					}
 				}
 				mat.AppendColumn(tmp)
-				/*	mat.AppendColumn([]clp.Nonzero{
-						{Index: i, Value: 1.0},                              // placement constraint
-						{Index: N + j*T + t, Value: float64(s.Jobs[i].CPU)}, // capacity constraint
-						{Index: N + M*T + i*M*T + j*T + t, Value: 1},        //0<=x_ij^t<=1 constraint
-					})
-				*/
 				coeff := math.Log(1000 - float64(s.Jobs[i].Deadline-s.Jobs[i].RemainTime))
 				obj[i*M*T+j*T+t] = 0
 				for tt := t; tt < T; tt++ {
@@ -289,7 +292,6 @@ func (s *Scheduler) APX() []int {
 						break
 					}
 				}
-
 			}
 		}
 	}
@@ -305,7 +307,6 @@ func (s *Scheduler) APX() []int {
 	for i := 0; i < N; i++ {
 		for j := 0; j < M; j++ {
 			for t := 0; t < int(s.T); t++ {
-
 				rb = append(rb, clp.Bounds{Lower: 0, Upper: 1})
 
 			}
