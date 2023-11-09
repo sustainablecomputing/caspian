@@ -13,25 +13,22 @@ import (
 	mcadv1beta1 "github.com/tayebehbahreini/mcad/api/v1beta1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubectl/pkg/scheme"
 )
 
 type Scheduler struct {
-	N             int // number of  jobs (AWs) (to be scheduled/rescheduled)
-	M             int // number of available clusters
-	T             int // length of time horizon (number of timeslots)
-	PeriodLength  int
-	Jobs          []core.Job     // list of jobs
-	Clusters      []core.Cluster // spoke clusters
-	crdClient     *rest.RESTClient
-	dynamicClient dynamic.Interface
+	N            int // number of  jobs (AWs) (to be scheduled/rescheduled)
+	M            int // number of available clusters
+	T            int // length of time horizon (number of timeslots)
+	PeriodLength int
+	Jobs         []core.Job     // list of jobs
+	Clusters     []core.Cluster // spoke clusters
+	crdClient    *rest.RESTClient
 }
 
 var AWResource = schema.GroupVersionResource{Group: mcadv1beta1.GroupVersion.Group,
@@ -41,14 +38,13 @@ var AWResource = schema.GroupVersionResource{Group: mcadv1beta1.GroupVersion.Gro
 // configure the clients with kube_config and hub-context
 func NewScheduler(kube_config string, hub_contxt string) *Scheduler {
 	s := &Scheduler{
-		N:             0,
-		M:             0,
-		T:             core.DefaultT,
-		PeriodLength:  core.DefaultSlotLength,
-		Jobs:          []core.Job{},
-		Clusters:      []core.Cluster{},
-		crdClient:     &rest.RESTClient{},
-		dynamicClient: nil,
+		N:            0,
+		M:            0,
+		T:            core.DefaultT,
+		PeriodLength: core.DefaultSlotLength,
+		Jobs:         []core.Job{},
+		Clusters:     []core.Cluster{},
+		crdClient:    &rest.RESTClient{},
 	}
 	config, err := buildConfigWithContextFromFlags(hub_contxt, kube_config)
 	crdConfig := *config
@@ -61,8 +57,6 @@ func NewScheduler(kube_config string, hub_contxt string) *Scheduler {
 	if err != nil {
 		panic(err)
 	}
-
-	s.dynamicClient, err = dynamic.NewForConfig(&crdConfig)
 	if err != nil {
 		panic(err)
 	}
@@ -84,7 +78,8 @@ func (s *Scheduler) GetAppWrappers() {
 		panic(err)
 	}
 	s.N = 0
-	fmt.Println("\n Name\t CPU\t RemainTime  \t Deadline  ")
+	fmt.Println("\nList of Appwrappers ")
+	fmt.Println("Name\t CPU\t RemainTime  \t Deadline \t \t \t Status ")
 	for _, aw := range result.Items {
 
 		// Aggregated request by AppWrapper
@@ -94,21 +89,23 @@ func (s *Scheduler) GetAppWrappers() {
 			aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Dispatching") ||
 			aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Requeuing") { //aw.Spec.Sustainable &&
 			remainTime := aw.Spec.Sustainable.RunTime - aw.Spec.DispatcherStatus.TimeDispatched/int64(s.PeriodLength)
+			//if
 			if remainTime < 0 {
-				//s.DeleteAppWrapper(aw.Name)
+				fmt.Println("\n Deleting Appwrapper ", aw.Name)
+				s.DeleteAppWrapper(aw.Name)
 			} else {
+
 				awRequest := aggregateRequests(&aw)
 				s.N = s.N + 1
 				newJob := core.Job{
 					Name:       aw.Name,
 					CPU:        awRequest["cpu"],
-					RemainTime: remainTime, // - C.int(aw.Spec.DispatcherStatus.DispatchedNanos/20000000000),
+					RemainTime: remainTime,
 					Deadline:   int64(math.Ceil(float64(aw.Spec.Sustainable.Deadline.Sub(metav1.Now().Time).Seconds()) / float64(s.PeriodLength))),
 				}
-				fmt.Print(newJob.CPU)
 
 				s.Jobs = append(s.Jobs, newJob)
-				fmt.Println(aw.Name, "\t", newJob.CPU, "\t", newJob.RemainTime, "\t\t", newJob.Deadline)
+				fmt.Println(aw.Name, "\t", newJob.CPU, "\t", newJob.RemainTime, "\t\t", aw.Spec.Sustainable.Deadline, aw.Spec.DispatcherStatus.Phase)
 
 			}
 		}
@@ -129,6 +126,8 @@ func (s *Scheduler) GetClustersInfo() {
 		panic(err)
 	}
 	j := 0
+	fmt.Println("\nList of Spoke Clusters ")
+	fmt.Println("Name \t Available CPU \t GeoLocation  ")
 	for _, cluster := range result.Items {
 		newCluster := core.Cluster{
 			Name:   cluster.Name,
@@ -139,38 +138,29 @@ func (s *Scheduler) GetClustersInfo() {
 			newCluster.Carbon[t], _ = strconv.ParseFloat(cluster.Spec.Carbon[t], 64)
 		}
 		s.Clusters = append(s.Clusters, newCluster)
+		fmt.Println(newCluster.Name, "\t", newCluster.CPU, "\t\t", cluster.Spec.Geolocation)
+
 		j = j + 1
 	}
 	s.M = len(result.Items)
-	fmt.Println(s.Clusters[0].CPU)
+
 }
 
 // retrive an AW
-func (s *Scheduler) GetAppWrapper(name string) (unstructured.Unstructured, error) {
-
-	result, err := s.dynamicClient.Resource(AWResource).Namespace(apiv1.NamespaceDefault).Get(context.Background(),
-		name, metav1.GetOptions{})
-	if err != nil {
-		return unstructured.Unstructured{}, err
-	}
-	return *result, err
+func (s *Scheduler) IsValidAppWrapper(Name string) error {
+	err := s.crdClient.Get().Resource("appwrappers").Name(Name).Error()
+	return err
 }
 
 // delete an AW
-func (s *Scheduler) DeleteAppWrapper(name string) error {
-
-	err := s.dynamicClient.Resource(AWResource).Namespace(apiv1.NamespaceDefault).Delete(context.Background(),
-		name, metav1.DeleteOptions{})
-	if err != nil {
-		panic(err)
-	}
-
+func (s *Scheduler) DeleteAppWrapper(Name string) error {
+	err := s.crdClient.Delete().Resource("appwrappers").Name(Name).Error()
 	return err
 }
 
 // add sustainability gate from the appwrapper
 func (s *Scheduler) PutHoldOnAppWrapper(Name string) error {
-	_, err := s.GetAppWrapper(Name)
+	err := s.IsValidAppWrapper(Name)
 
 	if err == nil {
 		var a [1]string
@@ -185,85 +175,71 @@ func (s *Scheduler) PutHoldOnAppWrapper(Name string) error {
 
 		payload, err := json.Marshal(patch)
 		if err != nil {
-			panic(err)
+			return err
 		}
-		AWClient := s.dynamicClient.Resource(AWResource).Namespace(apiv1.NamespaceDefault)
+		err = s.crdClient.Patch(types.JSONPatchType).Resource("appwrappers").Name(Name).
+			Namespace(apiv1.NamespaceDefault).Body(payload).Do(context.Background()).Error()
 
-		_, err = AWClient.Patch(context.Background(), Name, types.JSONPatchType, payload, metav1.PatchOptions{})
-		if err != nil {
-			panic(err)
+		return err
 
-		}
+	} else {
+		fmt.Println(Name, "is invalid Appwrapper")
+		return err
 	}
-
-	return nil
 }
 
 // delete sustainability gate from the appwrapper and set the targetCluster
 func (s *Scheduler) ReleasHoldOnAppWrapper(Name string, TargetCluster string) error {
-	_, err := s.GetAppWrapper(Name)
+	err := s.IsValidAppWrapper(Name)
 
 	if err == nil {
 		var a []string
-
 		patch := []interface{}{
 			map[string]interface{}{
 				"op":    "replace",
 				"path":  "/spec/dispatchingGates",
 				"value": a,
 			},
+			map[string]interface{}{
+				"op":    "add",
+				"path":  "/spec/schedulingSpec/clusterScheduling/policyResult/targetCluster/name",
+				"value": TargetCluster,
+			},
 		}
 		payload, err := json.Marshal(patch)
 		if err != nil {
 			return err
 		}
-		AWClient := s.dynamicClient.Resource(AWResource).Namespace(apiv1.NamespaceDefault)
+		err = s.crdClient.Patch(types.JSONPatchType).Resource("appwrappers").Name(Name).
+			Namespace(apiv1.NamespaceDefault).Body(payload).Do(context.Background()).Error()
 
-		_, err = AWClient.Patch(context.Background(), Name, types.JSONPatchType, payload, metav1.PatchOptions{})
-		if err != nil {
-			return err
-		}
+		return err
 
-		patch = []interface{}{
-			map[string]interface{}{
-				"op":    "replace",
-				"path":  "/spec/schedulingSpec/clusterScheduling/policyResult/targetCluster/name",
-				"value": TargetCluster,
-			},
-		}
-
-		payload, err = json.Marshal(patch)
-		if err != nil {
-			return err
-		}
-
-		_, err = AWClient.Patch(context.Background(), Name, types.JSONPatchType, payload, metav1.PatchOptions{})
-		if err != nil {
-			return err
-		}
+	} else {
+		fmt.Println(Name, "is invalid Appwrapper")
+		return err
 	}
-	return nil
+
 }
 
 func (s *Scheduler) Run() {
 
 	s.GetAppWrappers()
 	s.GetClustersInfo()
-
+	fmt.Println("\nDecision made by the optimizer:")
 	if s.N > 0 {
 
 		Targets := s.APX()
 
-		fmt.Println("Name\t Status ")
+		fmt.Println("Job Name\t  \tDecision ")
 		for i := 0; i < s.N; i++ {
-			print(Targets[i], " ")
 
-			if Targets[i] < 0 {
+			if Targets[i] >= 0 {
 				s.PutHoldOnAppWrapper(s.Jobs[i].Name)
-				fmt.Println(s.Jobs[i].Name, "\t On Hold ")
+				fmt.Println(s.Jobs[i].Name, "\t Suspend ")
 			} else {
 				s.ReleasHoldOnAppWrapper(s.Jobs[i].Name, s.Clusters[Targets[i]].Name)
-				fmt.Println(s.Jobs[i].Name, "\t No Hold  -->", s.Clusters[Targets[i]].Name)
+				fmt.Println(s.Jobs[i].Name, "\t \tScheduled on", s.Clusters[Targets[i]].Name)
 			}
 
 		}
