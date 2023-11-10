@@ -16,7 +16,35 @@ Caspian uses MicroMCAD as a Workload queueing and multi-cluster management platf
 ![caspian-mcad](https://github.com/sustainablecomputing/caspian/assets/34821570/32d1b7e5-c7eb-4cc8-8ce8-d1f1a87b0901)
 
 ##  Installation and Setup
+### Running locally against cluster
+This section explains how to run MicroMCAD and Caspian locally. You’ll need a Kubernetes cluster (as hub) to run against. You can use KIND to get a local cluster for testing, or run against a remote cluster. You will also need minimum one kubernetes cluster (as spoke) for dispatching workloads.
 
+- **Step 1: Run MicroMCAD against the hub cluster in dispatching mode**
+```
+go run .mcad/cmd/main.go --kube-context=kind-hub --mode=dispatcher --metrics-bind-address=127.0.0.1:8080 --health-probe-bind-address=127.0.0.1:8081
+
+```
+
+- **Step 2: Run MicroMCAD against each spoke cluster in runner mode**
+```
+go run ./mcad/cmd/main.go --kube-context=kind-spoke1 --mode=runner --metrics-bind-address=127.0.0.1:8082 --health-probe-bind-address=127.0.0.1:8083 --clusterinfo-name=spoke1
+```
+
+- **Step 3: Run syncer/syncers to syncing between hub cluster and  spoke cluster/clusters**
+```
+node syncer.js kind-hub kind-spoke1 default spoke1
+```
+
+- **Step 4: Run caspian against the hub cluster**
+```
+go run .mcad/cmd/main.go --kube-context=kind-hub 
+```
+
+
+
+You’ll need a Kubernetes cluster to run against. You can use KIND to get a local cluster for testing, or run against a remote cluster. 
+### Running on cluster
+Build and push your image to the location specified by imgae:
 ##  How to use it
 Once Caspian and MCAD are installed, you can deploy appwrappers in the hub clusters and watch their status.
 Caspian looks at the specifications of each appwrapper to determine the total CPU/GPU requirement, the run time, and the deadline for executing the appwrapper. The example below shows an example of an appwrapper. Under sustainale filed, you can specify the run time (in hours) and the deadline. If users does not fill these filed, Caspian by default assumes that the run time of the appwrapper is one hour and there is no deadline for finishing the appwrapper. 
