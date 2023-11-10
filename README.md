@@ -40,12 +40,12 @@ go run .mcad/cmd/main.go --kube-context=kind-hub --mode=dispatcher --metrics-bin
 go run ./mcad/cmd/main.go --kube-context=kind-spoke1 --mode=runner --metrics-bind-address=127.0.0.1:8082 --health-probe-bind-address=127.0.0.1:8083 --clusterinfo-name=spoke1
 ```
 
-- **Step 5: Run syncer/syncers to syncing between hub cluster and  spoke cluster/clusters**
+- **Step 5: Run syncer/syncers to syncing between hub cluster and  spoke cluster/clusters.**
 ```
 node syncer.js kind-hub kind-spoke1 default spoke1
 ```
 
-- **Step 5: Run caspian against the hub cluster**
+- **Step 5: Run caspian against the hub cluster.**
 ```
 go run .mcad/cmd/main.go --kube-context=kind-hub 
 ```
