@@ -45,7 +45,7 @@ go run ./mcad/cmd/main.go --kube-context=kind-spoke1 --mode=runner --metrics-bin
 node syncer.js kind-hub kind-spoke1 default spoke1
 ```
 
-- **Step 5: Run caspian against the hub cluster.**
+- **Step 5: Run Caspian against the hub cluster.**
 ```
 go run .mcad/cmd/main.go --kube-context=kind-hub 
 ```
@@ -54,7 +54,7 @@ go run .mcad/cmd/main.go --kube-context=kind-hub
 
 You’ll need a Kubernetes cluster to run against. You can use KIND to get a local cluster for testing, or run against a remote cluster. 
 ### Running on cluster
-Build and push your image to the location specified by imgae:
+
 ##  How to use it
 Once Caspian and MCAD are installed, you can deploy appwrappers in the hub clusters and watch their status.
 Caspian looks at the specifications of each appwrapper to determine the total CPU/GPU requirement, the run time, and the deadline for executing the appwrapper. The example below shows an example of an appwrapper. Under sustainale filed, you can specify the run time (in hours) and the deadline. If users does not fill these filed, Caspian by default assumes that the run time of the appwrapper is one hour and there is no deadline for finishing the appwrapper. 
