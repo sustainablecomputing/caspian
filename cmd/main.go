@@ -32,7 +32,7 @@ func main() {
 	for {
 		M.UpdateClusterInfo()
 		S.Schedule()
-		time.Sleep(100000 * period_length)
+		time.Sleep(period_length)
 	}
 
 }
