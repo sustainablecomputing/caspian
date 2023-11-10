@@ -16,7 +16,7 @@ Caspian uses MicroMCAD as a Workload queueing and multi-cluster management platf
 ![caspian-mcad](https://github.com/sustainablecomputing/caspian/assets/34821570/32d1b7e5-c7eb-4cc8-8ce8-d1f1a87b0901)
 
 ##  Installation and Setup
-### Running locally against cluster
+### Running outside a cluster
 This section explains how to run MCAD and Caspian locally. You’ll need a Kubernetes cluster (as hub) to run against. You can use KIND to get a local cluster for testing, or run against a remote cluster. You will also need a minimum one kubernetes cluster (as spoke) for dispatching workloads.
 
 - **Step 1: Clone multicluster branch of MCAD repository.**
