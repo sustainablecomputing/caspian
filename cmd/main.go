@@ -1,22 +1,33 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"os"
 	"time"
 
 	"github.com/sustainablecomputing/caspian/core"
 	"github.com/sustainablecomputing/caspian/monitoring"
 	"github.com/sustainablecomputing/caspian/scheduler"
+	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
 func main() {
 
 	period_length := time.Duration(core.DefaultRevisitTime)
-	dirname, _ := os.UserHomeDir()
-	kube_config := dirname + "/.kube/config"
-	hub_contxt := "kind-hub"
-	S := scheduler.NewScheduler(kube_config, hub_contxt)
-	M := monitoring.NewMonitor(kube_config, hub_contxt)
+	var kube_contxt string
+
+	flag.StringVar(&kube_contxt, "kube-context", "", "The Kubernetes context.")
+
+	flag.Parse()
+	conf, err := config.GetConfigWithContext(kube_contxt)
+	if err != nil {
+		fmt.Println(err, "Unable to get kubeconfig")
+		os.Exit(1)
+	}
+
+	S := scheduler.NewScheduler(conf)
+	M := monitoring.NewMonitor(conf)
 
 	for {
 		M.UpdateClusterInfo()

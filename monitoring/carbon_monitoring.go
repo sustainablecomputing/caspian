@@ -14,7 +14,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubectl/pkg/scheme"
 )
 
@@ -28,12 +27,12 @@ type Monitor struct {
 }
 
 // NewMonior creates a Monitor instance and configures its clients.
-func NewMonitor(kube_config string, hub_contxt string) *Monitor {
+func NewMonitor(config *rest.Config) *Monitor {
 	m := &Monitor{
 		Spokes:    []core.Cluster{},
 		crdClient: &rest.RESTClient{},
 	}
-	config, _ := buildConfigWithContextFromFlags(hub_contxt, kube_config)
+
 	crdConfig := *config
 	crdConfig.ContentConfig.GroupVersion = &schema.GroupVersion{Group: mcadv1beta1.GroupVersion.Group, Version: mcadv1beta1.GroupVersion.Version}
 	crdConfig.APIPath = "/apis"
@@ -135,12 +134,4 @@ func (m Monitor) GetCarbonFromFile(FilePath string) ([]string, error) {
 	}
 	return I, err
 
-}
-
-func buildConfigWithContextFromFlags(context string, kubeconfigPath string) (*rest.Config, error) {
-	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-		&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfigPath},
-		&clientcmd.ConfigOverrides{
-			CurrentContext: context,
-		}).ClientConfig()
 }

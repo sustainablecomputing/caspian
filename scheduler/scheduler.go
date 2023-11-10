@@ -17,7 +17,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubectl/pkg/scheme"
 )
 
@@ -36,7 +35,7 @@ var AWResource = schema.GroupVersionResource{Group: mcadv1beta1.GroupVersion.Gro
 
 // NewDispatcher : create a new dispather instance and
 // configure the clients with kube_config and hub-context
-func NewScheduler(kube_config string, hub_contxt string) *Scheduler {
+func NewScheduler(config *rest.Config) *Scheduler {
 	s := &Scheduler{
 		N:            0,
 		M:            0,
@@ -46,13 +45,14 @@ func NewScheduler(kube_config string, hub_contxt string) *Scheduler {
 		Clusters:     []core.Cluster{},
 		crdClient:    &rest.RESTClient{},
 	}
-	config, err := buildConfigWithContextFromFlags(hub_contxt, kube_config)
+	//config, err := buildConfigWithContextFromFlags(hub_contxt, kube_config)
 	crdConfig := *config
 	crdConfig.ContentConfig.GroupVersion = &schema.GroupVersion{Group: mcadv1beta1.GroupVersion.Group,
 		Version: mcadv1beta1.GroupVersion.Version}
 	crdConfig.APIPath = "/apis"
 	crdConfig.NegotiatedSerializer = serializer.NewCodecFactory(scheme.Scheme)
 	crdConfig.UserAgent = rest.DefaultKubernetesUserAgent()
+	var err error
 	s.crdClient, err = rest.UnversionedRESTClientFor(&crdConfig)
 	if err != nil {
 		panic(err)
@@ -231,7 +231,7 @@ func (s *Scheduler) ReleasHoldOnAppWrapper(Name string, TargetCluster string) er
 
 }
 
-func (s *Scheduler) Run() {
+func (s *Scheduler) Schedule() {
 
 	s.GetAppWrappers()
 	s.GetClustersInfo()
@@ -248,12 +248,9 @@ func (s *Scheduler) Run() {
 
 			} else {
 				s.ReleasHoldOnAppWrapper(s.Jobs[i].Name, s.Clusters[Targets[i]].Name)
-
 			}
-
 		}
 	}
-
 }
 
 func (s *Scheduler) APX() []int {
@@ -345,12 +342,4 @@ func aggregateRequests(appWrapper *mcadv1beta1.AppWrapper) core.Weights2 {
 		}
 	}
 	return request
-}
-
-func buildConfigWithContextFromFlags(context string, kubeconfigPath string) (*rest.Config, error) {
-	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-		&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfigPath},
-		&clientcmd.ConfigOverrides{
-			CurrentContext: context,
-		}).ClientConfig()
 }
