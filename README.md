@@ -31,7 +31,7 @@ git clone git@github.com:sustainablecomputing/caspian.git
 
 - **Step 3: Run MCAD against the hub cluster in dispatching mode.**
 ```
-go run .mcad/cmd/main.go --kube-context=kind-hub --mode=dispatcher --metrics-bind-address=127.0.0.1:8080 --health-probe-bind-address=127.0.0.1:8081
+go run ./mcad/cmd/main.go --kube-context=kind-hub --mode=dispatcher --metrics-bind-address=127.0.0.1:8080 --health-probe-bind-address=127.0.0.1:8081
 
 ```
 
