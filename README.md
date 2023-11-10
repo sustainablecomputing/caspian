@@ -47,7 +47,7 @@ node syncer.js kind-hub kind-spoke1 default spoke1
 
 - **Step 5: Run Caspian against the hub cluster.**
 ```
-go run .mcad/cmd/main.go --kube-context=kind-hub 
+go run ./caspian/cmd/main.go --kube-context=kind-hub 
 ```
 
 
