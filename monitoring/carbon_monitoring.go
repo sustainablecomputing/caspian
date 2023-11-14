@@ -7,6 +7,11 @@ import (
 	"fmt"
 	"os"
 
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"net/http"
+
 	core "github.com/sustainablecomputing/caspian/core"
 	mcadv1beta1 "github.com/tayebehbahreini/mcad/api/v1beta1"
 	apiv1 "k8s.io/api/core/v1"
@@ -24,6 +29,7 @@ var ClusterInfoResource = schema.GroupVersionResource{Group: mcadv1beta1.GroupVe
 type Monitor struct {
 	Spokes    []core.Cluster
 	crdClient *rest.RESTClient
+	T         int
 }
 
 // NewMonior creates a Monitor instance and configures its clients.
@@ -31,6 +37,7 @@ func NewMonitor(config *rest.Config) *Monitor {
 	m := &Monitor{
 		Spokes:    []core.Cluster{},
 		crdClient: &rest.RESTClient{},
+		T:         core.DefaultT,
 	}
 
 	crdConfig := *config
@@ -89,8 +96,10 @@ func (m Monitor) UpdateClusterInfo() error {
 
 // Retrive carbon intensity and update the carbon field of clusterinfo object
 func (m Monitor) UpdateCarbon(spoke core.Cluster) error {
-
-	I, _ := m.GetCarbonFromFile("./monitoring/data/" + spoke.GeoLocation + ".csv")
+	I, err := m.GetForecastedCarbonIntensity(spoke.GeoLocation)
+	if err != nil {
+		I, _ = m.GetCarbonFromFile("./monitoring/data/" + spoke.GeoLocation + ".csv")
+	}
 	patch := []interface{}{
 		map[string]interface{}{
 			"op":    "replace",
@@ -112,7 +121,7 @@ func (m Monitor) UpdateCarbon(spoke core.Cluster) error {
 
 // Read carbon from file
 func (m Monitor) GetCarbonFromFile(FilePath string) ([]string, error) {
-	I := make([]string, 24)
+	I := make([]string, m.T)
 	file, err := os.Open(FilePath)
 	if err != nil {
 		fmt.Print("Carbon Data is not available")
@@ -134,4 +143,27 @@ func (m Monitor) GetCarbonFromFile(FilePath string) ([]string, error) {
 	}
 	return I, err
 
+}
+
+func (m Monitor) GetForecastedCarbonIntensity(zone string) ([]string, error) {
+	I := make([]string, 24)
+	url := "https://api-access.electricitymaps.com/2w97h07rvxvuaa1g/carbon-intensity/forecast?zone=" + zone
+
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Add("auth-token", "qzfZVeA6xB0x198zJcvQ7ZyzaAz9Slhe")
+	res, _ := http.DefaultClient.Do(req)
+	defer res.Body.Close()
+
+	body, _ := ioutil.ReadAll(res.Body)
+	response := string(body)
+	resBytes := []byte(response)                    // Converting the string "res" into byte array
+	var jsonRes map[string][]map[string]interface{} // declaring a map for key names as string and values as interface
+	err := json.Unmarshal(resBytes, &jsonRes)       // Unmarshalling
+
+	a := jsonRes["forecast"]
+	for t := 0; t < m.T; t++ {
+		I[t] = fmt.Sprintf("%v", a[t]["carbonIntensity"])
+	}
+
+	return I, err
 }
