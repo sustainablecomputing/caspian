@@ -31,17 +31,20 @@ git clone git@github.com:sustainablecomputing/caspian.git
 
 - **Step 3: Run MCAD against the hub cluster in dispatching mode.**
 ```
-go run ./mcad/cmd/main.go --kube-context=kind-hub --mode=dispatcher --metrics-bind-address=127.0.0.1:8080 --health-probe-bind-address=127.0.0.1:8081
+cd mcad
+go run ./cmd/main.go --kube-context=kind-hub --mode=dispatcher --metrics-bind-address=127.0.0.1:8080 --health-probe-bind-address=127.0.0.1:8081
 
 ```
 
 - **Step 4: Run MicroMCAD against each spoke cluster in runner mode.**
 ```
-go run ./mcad/cmd/main.go --kube-context=kind-spoke1 --mode=runner --metrics-bind-address=127.0.0.1:8082 --health-probe-bind-address=127.0.0.1:8083 --clusterinfo-name=spoke1
+cd mcad
+go run ./cmd/main.go --kube-context=kind-spoke1 --mode=runner --metrics-bind-address=127.0.0.1:8082 --health-probe-bind-address=127.0.0.1:8083 --clusterinfo-name=spoke1
 ```
 
 - **Step 5: Run syncer/syncers to syncing between hub cluster and  spoke cluster/clusters.**
 ```
+cd mcad/syncer
 node syncer.js kind-hub kind-spoke1 default spoke1
 ```
 
