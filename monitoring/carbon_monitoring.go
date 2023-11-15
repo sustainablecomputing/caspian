@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"os"
 
-	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 
@@ -96,8 +94,9 @@ func (m Monitor) UpdateClusterInfo() error {
 
 // Retrive carbon intensity and update the carbon field of clusterinfo object
 func (m Monitor) UpdateCarbon(spoke core.Cluster) error {
-	I, err := m.GetForecastedCarbonIntensity(spoke.GeoLocation)
-	if err != nil {
+	I, DataIsFetched := m.GetForecastedCarbonIntensity(spoke.GeoLocation)
+	if !DataIsFetched {
+		fmt.Print("Error to fetch data. Using history of Carbon....")
 		I, _ = m.GetCarbonFromFile("./monitoring/data/" + spoke.GeoLocation + ".csv")
 	}
 	patch := []interface{}{
@@ -135,9 +134,9 @@ func (m Monitor) GetCarbonFromFile(FilePath string) ([]string, error) {
 
 	t := 0
 	for _, row := range data {
-		I[t] = row[0]
+		I[t] = row[1]
 		t = t + 1
-		if t > 23 {
+		if t > m.T {
 			break
 		}
 	}
@@ -145,25 +144,54 @@ func (m Monitor) GetCarbonFromFile(FilePath string) ([]string, error) {
 
 }
 
-func (m Monitor) GetForecastedCarbonIntensity(zone string) ([]string, error) {
-	I := make([]string, 24)
+func (m Monitor) GetForecastedCarbonIntensity(zone string) ([]string, bool) {
+	I := make([]string, m.T)
+	DataIsFetched := false
 	url := "https://api-access.electricitymaps.com/2w97h07rvxvuaa1g/carbon-intensity/forecast?zone=" + zone
 
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Add("auth-token", "qzfZVeA6xB0x198zJcvQ7ZyzaAz9Slhe")
-	res, _ := http.DefaultClient.Do(req)
+	res, err := http.DefaultClient.Do(req)
 	defer res.Body.Close()
+	if err == nil {
+		body, _ := ioutil.ReadAll(res.Body)
+		response := string(body)
+		resBytes := []byte(response)                    // Converting the string "res" into byte array
+		var jsonRes map[string][]map[string]interface{} // declaring a map for key names as string and values as interface
+		err = json.Unmarshal(resBytes, &jsonRes)        // Unmarshalling
 
-	body, _ := ioutil.ReadAll(res.Body)
-	response := string(body)
-	resBytes := []byte(response)                    // Converting the string "res" into byte array
-	var jsonRes map[string][]map[string]interface{} // declaring a map for key names as string and values as interface
-	err := json.Unmarshal(resBytes, &jsonRes)       // Unmarshalling
+		a := jsonRes["forecast"]
+		if a != nil {
+			DataIsFetched = true
+			for t := 0; t < m.T; t++ {
+				I[t] = fmt.Sprintf("%v", a[t]["carbonIntensity"])
+			}
+		}
+	}
+	if !DataIsFetched {
+		url := "https://api-access.electricitymaps.com/free-tier/carbon-intensity/latest?zone=" + zone
 
-	a := jsonRes["forecast"]
-	for t := 0; t < m.T; t++ {
-		I[t] = fmt.Sprintf("%v", a[t]["carbonIntensity"])
+		req, _ := http.NewRequest("GET", url, nil)
+		req.Header.Add("auth-token", "qzfZVeA6xB0x198zJcvQ7ZyzaAz9Slhe")
+
+		res, _ := http.DefaultClient.Do(req)
+		defer res.Body.Close()
+
+		body, _ := ioutil.ReadAll(res.Body)
+
+		resBytes := []byte(body)                 // Converting the string "res" into byte array
+		var jsonRes map[string]interface{}       // declaring a map for key names as string and values as interface
+		err = json.Unmarshal(resBytes, &jsonRes) // Unmarshalling
+
+		a := jsonRes["carbonIntensity"]
+		if a != nil {
+			DataIsFetched = true
+			for t := 0; t < m.T; t++ {
+				I[t] = fmt.Sprintf("%v", a)
+			}
+		}
+
 	}
 
-	return I, err
+	return I, DataIsFetched
 }
