@@ -17,7 +17,7 @@ func main() {
 	period_length := time.Duration(core.DefaultRevisitTime)
 	var kube_contxt string
 
-	flag.StringVar(&kube_contxt, "kube-context", "", "The Kubernetes context.")
+	flag.StringVar(&kube_contxt, "kube-context", "kind-hub", "The Kubernetes context.")
 
 	flag.Parse()
 	conf, err := config.GetConfigWithContext(kube_contxt)
