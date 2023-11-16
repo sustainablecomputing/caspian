@@ -15,6 +15,7 @@ type Cluster struct {
 
 type Job struct {
 	Name            string
+	Namespace       string
 	Deadline        int64
 	CPU             float64
 	RunTime         int64
