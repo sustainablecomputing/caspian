@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"time"
 
 	"github.com/lanl/clp"
 	core "github.com/sustainablecomputing/caspian/core"
@@ -88,7 +89,14 @@ func (s *Scheduler) GetAppWrappers() {
 			aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Running") ||
 			aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Dispatching") ||
 			aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Requeuing") { //aw.Spec.Sustainable &&
-			remainTime := aw.Spec.Sustainable.RunTime - aw.Spec.DispatcherStatus.TimeDispatched/int64(s.PeriodLength)
+			TimeDispatched := aw.Spec.DispatcherStatus.TimeDispatched //+
+			if aw.Spec.DispatcherStatus.Phase != mcadv1beta1.AppWrapperPhase("Queued") {
+				TimeDispatched += int64(time.Since(aw.Spec.DispatcherStatus.LastDispatchingTime.Time).Seconds())
+			}
+
+			TimeDispatched = aw.Spec.DispatcherStatus.TimeDispatched / int64(s.PeriodLength)
+
+			remainTime := aw.Spec.Sustainable.RunTime - TimeDispatched
 			//if
 			if remainTime < 0 {
 				fmt.Println("\n Deleting Appwrapper ", aw.Name)
@@ -131,10 +139,10 @@ func (s *Scheduler) GetClustersInfo() {
 	for _, cluster := range result.Items {
 		newCluster := core.Cluster{
 			Name:   cluster.Name,
-			CPU:    7000, //cluster.Status.Capacity.Cpu().Value(),
-			Carbon: make([]float64, 24),
+			CPU:    float64(cluster.Status.Capacity.Cpu().Value()),
+			Carbon: make([]float64, s.T),
 		}
-		for t := 0; t < 24; t++ {
+		for t := 0; t < s.T; t++ {
 			newCluster.Carbon[t], _ = strconv.ParseFloat(cluster.Spec.Carbon[t], 64)
 		}
 		s.Clusters = append(s.Clusters, newCluster)
