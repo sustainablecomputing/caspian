@@ -1,7 +1,8 @@
 package core
 
 var (
-	DefaultT           = 24
-	DefaultSlotLength  = 3600
-	DefaultRevisitTime = 6000
+	DefaultT               = 24
+	DefaultSlotLength      = 60              //second
+	DefaultRevisitTime     = 1000000000 * 60 //nano second
+	DefaultCarbonIntensity = 475
 )
