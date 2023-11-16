@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 
 	"io/ioutil"
 	"net/http"
@@ -97,7 +98,12 @@ func (m Monitor) UpdateCarbon(spoke core.Cluster) error {
 	I, DataIsFetched := m.GetForecastedCarbonIntensity(spoke.GeoLocation)
 	if !DataIsFetched {
 		fmt.Print("Error to fetch data. Using history of Carbon....")
-		I, _ = m.GetCarbonFromFile("./monitoring/data/" + spoke.GeoLocation + ".csv")
+		I, DataIsFetched = m.GetCarbonFromFile("./monitoring/data/" + spoke.GeoLocation + ".csv")
+	}
+	if !DataIsFetched {
+		for t := 0; t < m.T; t++ {
+			I[t] = strconv.Itoa(core.DefaultCarbonIntensity)
+		}
 	}
 	patch := []interface{}{
 		map[string]interface{}{
@@ -119,28 +125,31 @@ func (m Monitor) UpdateCarbon(spoke core.Cluster) error {
 }
 
 // Read carbon from file
-func (m Monitor) GetCarbonFromFile(FilePath string) ([]string, error) {
+func (m Monitor) GetCarbonFromFile(FilePath string) ([]string, bool) {
 	I := make([]string, m.T)
+	DataIsFetched := false
 	file, err := os.Open(FilePath)
 	if err != nil {
 		fmt.Print("Carbon Data is not available")
-	}
-	reader := csv.NewReader(file)
-	reader.FieldsPerRecord = -1 // Allow variable number of fields
-	data, err := reader.ReadAll()
-	if err != nil {
-		panic(err)
-	}
+	} else {
 
-	t := 0
-	for _, row := range data {
-		I[t] = row[1]
-		t = t + 1
-		if t > m.T {
-			break
+		reader := csv.NewReader(file)
+		reader.FieldsPerRecord = -1 // Allow variable number of fields
+		data, err := reader.ReadAll()
+		if err == nil {
+
+			t := 0
+			for _, row := range data {
+				I[t] = row[1]
+				t = t + 1
+				if t > m.T {
+					break
+				}
+			}
+			DataIsFetched = true
 		}
 	}
-	return I, err
+	return I, DataIsFetched
 
 }
 
@@ -151,22 +160,25 @@ func (m Monitor) GetForecastedCarbonIntensity(zone string) ([]string, bool) {
 
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Add("auth-token", "qzfZVeA6xB0x198zJcvQ7ZyzaAz9Slhe")
-	res, err := http.DefaultClient.Do(req)
-	defer res.Body.Close()
-	if err == nil {
+	res, _ := http.DefaultClient.Do(req)
+
+	if res != nil {
+		defer res.Body.Close()
 		body, _ := ioutil.ReadAll(res.Body)
 		response := string(body)
 		resBytes := []byte(response)                    // Converting the string "res" into byte array
 		var jsonRes map[string][]map[string]interface{} // declaring a map for key names as string and values as interface
-		err = json.Unmarshal(resBytes, &jsonRes)        // Unmarshalling
-
-		a := jsonRes["forecast"]
-		if a != nil {
-			DataIsFetched = true
-			for t := 0; t < m.T; t++ {
-				I[t] = fmt.Sprintf("%v", a[t]["carbonIntensity"])
+		err := json.Unmarshal(resBytes, &jsonRes)       // Unmarshalling
+		if err == nil {
+			a := jsonRes["forecast"]
+			if a != nil {
+				DataIsFetched = true
+				for t := 0; t < m.T; t++ {
+					I[t] = fmt.Sprintf("%v", a[t]["carbonIntensity"])
+				}
 			}
 		}
+
 	}
 	if !DataIsFetched {
 		url := "https://api-access.electricitymaps.com/free-tier/carbon-intensity/latest?zone=" + zone
@@ -175,20 +187,24 @@ func (m Monitor) GetForecastedCarbonIntensity(zone string) ([]string, bool) {
 		req.Header.Add("auth-token", "qzfZVeA6xB0x198zJcvQ7ZyzaAz9Slhe")
 
 		res, _ := http.DefaultClient.Do(req)
-		defer res.Body.Close()
+		if res != nil {
+			defer res.Body.Close()
 
-		body, _ := ioutil.ReadAll(res.Body)
+			body, _ := ioutil.ReadAll(res.Body)
 
-		resBytes := []byte(body)                 // Converting the string "res" into byte array
-		var jsonRes map[string]interface{}       // declaring a map for key names as string and values as interface
-		err = json.Unmarshal(resBytes, &jsonRes) // Unmarshalling
-
-		a := jsonRes["carbonIntensity"]
-		if a != nil {
-			DataIsFetched = true
-			for t := 0; t < m.T; t++ {
-				I[t] = fmt.Sprintf("%v", a)
+			resBytes := []byte(body)                  // Converting the string "res" into byte array
+			var jsonRes map[string]interface{}        // declaring a map for key names as string and values as interface
+			err := json.Unmarshal(resBytes, &jsonRes) // Unmarshalling
+			if err != nil {
+				a := jsonRes["carbonIntensity"]
+				if a != nil {
+					DataIsFetched = true
+					for t := 0; t < m.T; t++ {
+						I[t] = fmt.Sprintf("%v", a)
+					}
+				}
 			}
+
 		}
 
 	}
