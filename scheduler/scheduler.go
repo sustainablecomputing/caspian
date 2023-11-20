@@ -107,6 +107,7 @@ func (s *Scheduler) GetAppWrappers() {
 				s.N = s.N + 1
 				newJob := core.Job{
 					Name:       aw.Name,
+					Namespace:  aw.Namespace,
 					CPU:        awRequest["cpu"],
 					RemainTime: remainTime,
 					Deadline:   int64(math.Ceil(float64(aw.Spec.Sustainable.Deadline.Sub(metav1.Now().Time).Seconds()) / float64(s.PeriodLength))),
@@ -170,8 +171,8 @@ func (s *Scheduler) DeleteAppWrapper(Name string) error {
 }
 
 // add sustainability gate from the appwrapper
-func (s *Scheduler) PutHoldOnAppWrapper(Name string) error {
-	err := s.IsValidAppWrapper(Name)
+func (s *Scheduler) PutHoldOnAppWrapper(Job core.Job) error {
+	err := s.IsValidAppWrapper(Job.Name)
 
 	if err == nil {
 		var a [1]string
@@ -188,23 +189,23 @@ func (s *Scheduler) PutHoldOnAppWrapper(Name string) error {
 		if err != nil {
 			return err
 		}
-		err = s.crdClient.Patch(types.JSONPatchType).Resource("appwrappers").Name(Name).
-			Namespace(apiv1.NamespaceDefault).Body(payload).Do(context.Background()).Error()
+		err = s.crdClient.Patch(types.JSONPatchType).Resource("appwrappers").Name(Job.Name).
+			Namespace(Job.Namespace).Body(payload).Do(context.Background()).Error()
 		if err == nil {
-			fmt.Println(Name, "\t Suspend ")
+			fmt.Println(Job.Name, "\t Suspend ")
 		}
 
 		return err
 
 	} else {
-		fmt.Println(Name, "is invalid Appwrapper")
+		fmt.Println(Job.Name, "is invalid Appwrapper")
 		return err
 	}
 }
 
 // delete sustainability gate from the appwrapper and set the targetCluster
-func (s *Scheduler) ReleasHoldOnAppWrapper(Name string, TargetCluster string) error {
-	err := s.IsValidAppWrapper(Name)
+func (s *Scheduler) ReleasHoldOnAppWrapper(Job core.Job, TargetCluster string) error {
+	err := s.IsValidAppWrapper(Job.Name)
 
 	if err == nil {
 		var a []string
@@ -224,16 +225,16 @@ func (s *Scheduler) ReleasHoldOnAppWrapper(Name string, TargetCluster string) er
 		if err != nil {
 			return err
 		}
-		err = s.crdClient.Patch(types.JSONPatchType).Resource("appwrappers").Name(Name).
-			Namespace(apiv1.NamespaceDefault).Body(payload).Do(context.Background()).Error()
+		err = s.crdClient.Patch(types.JSONPatchType).Resource("appwrappers").Name(Job.Name).
+			Namespace(Job.Namespace).Body(payload).Do(context.Background()).Error()
 		if err == nil {
-			fmt.Println(Name, "\t \tScheduled on", TargetCluster)
+			fmt.Println(Job.Name, "\t \tScheduled on", TargetCluster)
 		}
 
 		return err
 
 	} else {
-		fmt.Println(Name, "is invalid Appwrapper")
+		fmt.Println(Job.Name, "is invalid Appwrapper")
 		return err
 	}
 
@@ -246,22 +247,22 @@ func (s *Scheduler) Schedule() {
 	fmt.Println("\nDecision made by the optimizer:")
 	if s.N > 0 {
 
-		Targets := s.APX()
+		Targets := s.Optimize()
 
 		fmt.Println("Job Name\t  \tDecision ")
 		for i := 0; i < s.N; i++ {
 
 			if Targets[i] < 0 {
-				s.PutHoldOnAppWrapper(s.Jobs[i].Name)
+				s.PutHoldOnAppWrapper(s.Jobs[i])
 
 			} else {
-				s.ReleasHoldOnAppWrapper(s.Jobs[i].Name, s.Clusters[Targets[i]].Name)
+				s.ReleasHoldOnAppWrapper(s.Jobs[i], s.Clusters[Targets[i]].Name)
 			}
 		}
 	}
 }
 
-func (s *Scheduler) APX() []int {
+func (s *Scheduler) Optimize() []int {
 
 	N := s.N
 	M := s.M

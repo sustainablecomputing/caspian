@@ -11,6 +11,7 @@ type Cluster struct {
 	GeoLocation string
 	Carbon      []float64
 	CPU         float64
+	GPU         int64
 }
 
 type Job struct {
