@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"time"
 
@@ -13,7 +14,6 @@ import (
 	core "github.com/sustainablecomputing/caspian/core"
 	mcadv1beta1 "github.com/tayebehbahreini/mcad/api/v1beta1"
 	apiv1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
@@ -29,6 +29,19 @@ type Scheduler struct {
 	Jobs         []core.Job     // list of jobs
 	Clusters     []core.Cluster // spoke clusters
 	crdClient    *rest.RESTClient
+}
+
+type SchedulingDecision struct {
+	i    int     //job index
+	j    int     //cluster index
+	t    int     //time slot
+	xbar float64 //allocation by lp
+}
+
+type Objective struct { //
+	j   int
+	t   int
+	val float64
 }
 
 var AWResource = schema.GroupVersionResource{Group: mcadv1beta1.GroupVersion.Group,
@@ -80,7 +93,7 @@ func (s *Scheduler) GetAppWrappers() {
 	}
 	s.N = 0
 	fmt.Println("\nList of Appwrappers ")
-	fmt.Println("Name\t CPU\t RemainTime  \t Deadline \t \t \t Status ")
+	fmt.Println("Name\t CPU\t GPU\t RemainTime  \t Deadline \t \t \t Status ")
 	for _, aw := range result.Items {
 
 		// Aggregated request by AppWrapper
@@ -88,35 +101,49 @@ func (s *Scheduler) GetAppWrappers() {
 		if aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Queued") ||
 			aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Running") ||
 			aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Dispatching") ||
-			aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Requeuing") { //aw.Spec.Sustainable &&
+			aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Requeuing") ||
+			aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Failed") { //aw.Spec.Sustainable &&
 			TimeDispatched := aw.Spec.DispatcherStatus.TimeDispatched //+
-			if aw.Spec.DispatcherStatus.Phase != mcadv1beta1.AppWrapperPhase("Queued") {
+			if aw.Spec.DispatcherStatus.Phase != mcadv1beta1.AppWrapperPhase("Queued") ||
+				aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Failed") {
 				TimeDispatched += int64(time.Since(aw.Spec.DispatcherStatus.LastDispatchingTime.Time).Seconds())
 			}
 
-			TimeDispatched = aw.Spec.DispatcherStatus.TimeDispatched / int64(s.PeriodLength)
+			//TimeDispatched = aw.Spec.DispatcherStatus.TimeDispatched
 
-			remainTime := aw.Spec.Sustainable.RunTime - TimeDispatched
-			//if
-			if remainTime < 0 {
-				fmt.Println("\n Deleting Appwrapper ", aw.Name)
-				s.DeleteAppWrapper(aw.Name)
-			} else {
-
-				awRequest := aggregateRequests(&aw)
-				s.N = s.N + 1
-				newJob := core.Job{
-					Name:       aw.Name,
-					Namespace:  aw.Namespace,
-					CPU:        awRequest["cpu"],
-					RemainTime: remainTime,
-					Deadline:   int64(math.Ceil(float64(aw.Spec.Sustainable.Deadline.Sub(metav1.Now().Time).Seconds()) / float64(s.PeriodLength))),
-				}
-
-				s.Jobs = append(s.Jobs, newJob)
-				fmt.Println(aw.Name, "\t", newJob.CPU, "\t", newJob.RemainTime, "\t\t", aw.Spec.Sustainable.Deadline, aw.Spec.DispatcherStatus.Phase)
+			remainTime := int64(math.Ceil(float64(aw.Spec.Sustainable.RunTime-TimeDispatched) / float64(s.PeriodLength)))
+			if aw.Spec.Sustainable.RunTime == 0 { //runtime is not specified by user
+				remainTime = int64(math.Ceil(float64(core.DefaultRunTime-int(TimeDispatched)) / float64(s.PeriodLength)))
 
 			}
+			deadline := int64(s.T)
+			if !aw.Spec.Sustainable.Deadline.IsZero() { //deadline is not specified by user
+
+				deadline = 0 - int64(math.Ceil(float64(time.Now().Sub(aw.Spec.Sustainable.Deadline.Time).Seconds()))/float64(s.PeriodLength))
+
+			}
+			//if
+
+			awRequest := aggregateRequests(&aw)
+
+			newJob := core.Job{
+				Name:       aw.Name,
+				Namespace:  aw.Namespace,
+				CPU:        awRequest["cpu"],
+				GPU:        awRequest["nvidia.com/gpu"],
+				RemainTime: remainTime,
+				Deadline:   deadline,
+			}
+			if remainTime <= 0 {
+				//fmt.Println("\n Suspendind Appwrapper ", aw.Name)
+				//s.DeleteAppWrapper(aw.Name)
+				s.PutHoldOnAppWrapper(newJob)
+			} else {
+				s.N = s.N + 1
+				s.Jobs = append(s.Jobs, newJob)
+				fmt.Println(aw.Name, "\t", newJob.CPU, "\t", newJob.GPU, "\t", newJob.RemainTime, "\t\t", deadline, "\t", aw.Spec.DispatcherStatus.Phase)
+			}
+
 		}
 
 	}
@@ -125,6 +152,7 @@ func (s *Scheduler) GetAppWrappers() {
 
 // get all clusterinfos in hub
 func (s *Scheduler) GetClustersInfo() {
+	s.Clusters = []core.Cluster{}
 	result := mcadv1beta1.ClusterInfoList{}
 	err := s.crdClient.
 		Get().
@@ -136,18 +164,21 @@ func (s *Scheduler) GetClustersInfo() {
 	}
 	j := 0
 	fmt.Println("\nList of Spoke Clusters ")
-	fmt.Println("Name \t Available CPU \t GeoLocation  ")
+	fmt.Println("Name \t Available CPU \t Available GPU \t GeoLocation  ")
 	for _, cluster := range result.Items {
+		weight := core.NewWeights2(cluster.Status.Capacity)
 		newCluster := core.Cluster{
-			Name:   cluster.Name,
-			CPU:    float64(cluster.Status.Capacity.Cpu().Value()),
-			Carbon: make([]float64, s.T),
+			Name:        cluster.Name,
+			GeoLocation: cluster.Spec.Geolocation,
+			Carbon:      make([]float64, s.T),
+			CPU:         weight["cpu"],
+			GPU:         weight["nvidia.com/gpu"],
 		}
 		for t := 0; t < s.T; t++ {
 			newCluster.Carbon[t], _ = strconv.ParseFloat(cluster.Spec.Carbon[t], 64)
 		}
 		s.Clusters = append(s.Clusters, newCluster)
-		fmt.Println(newCluster.Name, "\t", newCluster.CPU, "\t\t", cluster.Spec.Geolocation)
+		fmt.Println(newCluster.Name, "\t", newCluster.CPU, "\t\t", newCluster.GPU, "\t\t", newCluster.GeoLocation)
 
 		j = j + 1
 	}
@@ -156,9 +187,9 @@ func (s *Scheduler) GetClustersInfo() {
 }
 
 // find an AW
-func (s *Scheduler) IsValidAppWrapper(Name string) error {
+func (s *Scheduler) IsValidAppWrapper(Job core.Job) error {
 	err := s.crdClient.Get().Resource("appwrappers").
-		Namespace(apiv1.NamespaceDefault).Name(Name).Do(context.Background()).Error()
+		Namespace(Job.Namespace).Name(Job.Name).Do(context.Background()).Error()
 
 	return err
 }
@@ -172,7 +203,7 @@ func (s *Scheduler) DeleteAppWrapper(Name string) error {
 
 // add sustainability gate from the appwrapper
 func (s *Scheduler) PutHoldOnAppWrapper(Job core.Job) error {
-	err := s.IsValidAppWrapper(Job.Name)
+	err := s.IsValidAppWrapper(Job)
 
 	if err == nil {
 		var a [1]string
@@ -191,9 +222,9 @@ func (s *Scheduler) PutHoldOnAppWrapper(Job core.Job) error {
 		}
 		err = s.crdClient.Patch(types.JSONPatchType).Resource("appwrappers").Name(Job.Name).
 			Namespace(Job.Namespace).Body(payload).Do(context.Background()).Error()
-		if err == nil {
+		/*if err == nil {
 			fmt.Println(Job.Name, "\t Suspend ")
-		}
+		}*/
 
 		return err
 
@@ -204,8 +235,8 @@ func (s *Scheduler) PutHoldOnAppWrapper(Job core.Job) error {
 }
 
 // delete sustainability gate from the appwrapper and set the targetCluster
-func (s *Scheduler) ReleasHoldOnAppWrapper(Job core.Job, TargetCluster string) error {
-	err := s.IsValidAppWrapper(Job.Name)
+func (s *Scheduler) RemoveGateFromAW(Job core.Job, TargetCluster string) error {
+	err := s.IsValidAppWrapper(Job)
 
 	if err == nil {
 		var a []string
@@ -214,9 +245,8 @@ func (s *Scheduler) ReleasHoldOnAppWrapper(Job core.Job, TargetCluster string) e
 				"op":    "replace",
 				"path":  "/spec/dispatchingGates",
 				"value": a,
-			},
-			map[string]interface{}{
-				"op":    "add",
+			}, map[string]interface{}{
+				"op":    "replace",
 				"path":  "/spec/schedulingSpec/clusterScheduling/policyResult/targetCluster/name",
 				"value": TargetCluster,
 			},
@@ -229,6 +259,8 @@ func (s *Scheduler) ReleasHoldOnAppWrapper(Job core.Job, TargetCluster string) e
 			Namespace(Job.Namespace).Body(payload).Do(context.Background()).Error()
 		if err == nil {
 			fmt.Println(Job.Name, "\t \tScheduled on", TargetCluster)
+		} else {
+			panic(err) //return err
 		}
 
 		return err
@@ -240,64 +272,168 @@ func (s *Scheduler) ReleasHoldOnAppWrapper(Job core.Job, TargetCluster string) e
 
 }
 
-func (s *Scheduler) Schedule() {
-
+func (s *Scheduler) Schedule(optimizer string) {
+	sustainable := false
+	if optimizer == "sustainable" {
+		sustainable = true
+	}
 	s.GetAppWrappers()
 	s.GetClustersInfo()
 	fmt.Println("\nDecision made by the optimizer:")
-	if s.N > 0 {
+	if s.N > 0 && s.M > 0 {
 
-		Targets := s.Optimize()
+		Targets := s.Optimize(sustainable)
 
-		fmt.Println("Job Name\t  \tDecision ")
 		for i := 0; i < s.N; i++ {
 
 			if Targets[i] < 0 {
 				s.PutHoldOnAppWrapper(s.Jobs[i])
 
 			} else {
-				s.ReleasHoldOnAppWrapper(s.Jobs[i], s.Clusters[Targets[i]].Name)
+				s.RemoveGateFromAW(s.Jobs[i], s.Clusters[Targets[i]].Name)
 			}
 		}
 	}
 }
-
-func (s *Scheduler) Optimize() []int {
+func (s *Scheduler) Optimize(sustainable bool) []int {
 
 	N := s.N
 	M := s.M
 	T := s.T
-
-	// Set up the problem.
+	obj := make([]float64, N*M*T)
+	Available_GPU := make([]float64, M*T)
+	Available_CPU := make([]float64, M*T)
 	Targets := make([]int, N)
+	Objectives := make([][]Objective, N)
+	for i := 0; i < N; i++ {
+		cnt := 0
+		Objectives[i] = make([]Objective, M*T)
+		for j := 0; j < M; j++ {
+			coeff := 1.0
+			for t := 0; t < T; t++ {
+				if int64(t)+s.Jobs[i].RemainTime > s.Jobs[i].Deadline {
+
+					coeff += math.Log(1 + float64(int64(t)+s.Jobs[i].RemainTime-s.Jobs[i].Deadline))
+				}
+				obj[i*M*T+j*T+t] = 0
+				if sustainable {
+					for tt := t; tt < T; tt++ {
+						obj[i*T*M+j*T+t] += (s.Jobs[i].CPU + s.Jobs[i].GPU) / (coeff * s.Clusters[j].Carbon[tt])
+						if tt > t+int(s.Jobs[i].RemainTime) {
+							break
+						}
+					}
+				} else {
+					obj[i*M*T+j*T+t] = float64(1 / (1 + int64(t) + s.Jobs[i].RemainTime))
+				}
+				Objectives[i][cnt].j = j
+				Objectives[i][cnt].t = t
+				Objectives[i][cnt].val = obj[i*T*M+j*T+t]
+				Available_GPU[j*T+t] = s.Clusters[j].GPU
+				Available_CPU[j*T+t] = s.Clusters[j].CPU
+				cnt++
+			}
+		}
+		sort.Slice(Objectives[i], func(h, k int) bool {
+			return Objectives[i][h].val > Objectives[i][k].val
+		})
+
+	}
+
+	SchedulingDecisions := s.LPSolve(obj)
+
+	sort.Slice(SchedulingDecisions, func(i, j int) bool {
+		return SchedulingDecisions[i].xbar > SchedulingDecisions[j].xbar
+	})
+
+	for ii := 0; ii < N; ii++ {
+
+		i := SchedulingDecisions[ii].i
+		j := SchedulingDecisions[ii].j
+		t := SchedulingDecisions[ii].t
+		Targets[i] = -1
+		found := false
+		if SchedulingDecisions[ii].xbar >= 1 {
+
+			found = true
+		} else {
+			for cnt := 0; cnt < M*T; cnt++ {
+				j = Objectives[i][cnt].j
+				t = Objectives[i][cnt].t
+
+				found = true
+				for tt := t; tt < t+int(s.Jobs[i].RemainTime); tt++ {
+					if Available_GPU[j*T+tt] < s.Jobs[i].GPU || Available_CPU[j*T+tt] < s.Jobs[i].CPU {
+						//	fmt.Println(i, j, t, "llll")
+						found = false
+						break
+					}
+				}
+				if found {
+					//fmt.Println(i, j, t, "kkkk")
+					break
+
+				}
+			}
+		}
+
+		if found {
+			if t == 0 {
+				Targets[i] = j
+			}
+
+			for tt := t; tt < t+int(s.Jobs[i].RemainTime); tt++ {
+				Available_GPU[j*T+tt] -= s.Jobs[i].GPU
+				Available_CPU[j*T+tt] -= s.Jobs[i].CPU
+
+			}
+		}
+	}
+	return Targets
+
+}
+
+func (s *Scheduler) LPSolve(obj []float64) []SchedulingDecision {
+
+	N := s.N
+	M := s.M
+	T := s.T
+	SchedulingDecisions := make([]SchedulingDecision, N)
+	// Set up the problem.
+
 	rb := []clp.Bounds{}
 	mat := clp.NewPackedMatrix()
-	obj := make([]float64, N*M*T)
-
+	//obj := make([]float64, N*M*T)
 	//set coeff of x in each row (constraint) and in objective function
 	//Index is the index of constraint, Value is the coefficient of variable
 	for i := 0; i < N; i++ {
 		for j := 0; j < M; j++ {
 			for t := 0; t < T; t++ {
 				tmp := []clp.Nonzero{}
-				tmp = append(tmp, clp.Nonzero{Index: i, Value: 1.0})                       // placement constraint
-				tmp = append(tmp, clp.Nonzero{Index: N + M*T + i*M*T + j*T + t, Value: 1}) //0<=x_ij^t<=1 constraint
+				tmp = append(tmp, clp.Nonzero{Index: i, Value: 1.0})                         // placement constraint
+				tmp = append(tmp, clp.Nonzero{Index: N + 2*M*T + i*M*T + j*T + t, Value: 1}) //0<=x_ij^t<=1 constraint;2 is for two capacity constarint:cpu and gpu
 
-				for tt := t; tt < T; tt++ { // capacity constraint
-					tmp = append(tmp, clp.Nonzero{Index: N + j*T + tt, Value: float64(s.Jobs[i].CPU)})
+				for tt := t; tt < T; tt++ { // capacity constraint: cpu and gpu
+					if s.Jobs[i].CPU > 0 {
+						tmp = append(tmp, clp.Nonzero{Index: N + j*T + tt, Value: float64(s.Jobs[i].CPU)})
+
+					}
+					if s.Jobs[i].GPU > 0 {
+						tmp = append(tmp, clp.Nonzero{Index: N + M*T + j*T + tt, Value: float64(s.Jobs[i].GPU)})
+					}
 					if tt > t+int(s.Jobs[i].RemainTime) {
 						break
 					}
 				}
 				mat.AppendColumn(tmp)
-				coeff := math.Log(1000 - float64(s.Jobs[i].Deadline-s.Jobs[i].RemainTime))
+				/*coeff := math.Log(1000 - float64(s.Jobs[i].Deadline-s.Jobs[i].RemainTime))
 				obj[i*M*T+j*T+t] = 0
 				for tt := t; tt < T; tt++ {
-					obj[i*T*M+j*T+t] += s.Jobs[i].CPU / (coeff * s.Clusters[j].Carbon[tt]) ///
+					obj[i*T*M+j*T+t] += (s.Jobs[i].CPU + s.Jobs[i].GPU) / (coeff * s.Clusters[j].Carbon[tt]) ///
 					if tt < t+int(s.Jobs[i].RemainTime) {
 						break
 					}
-				}
+				}*/
 			}
 		}
 	}
@@ -306,10 +442,14 @@ func (s *Scheduler) Optimize() []int {
 	}
 	for j := 0; j < M; j++ {
 		for t := 0; t < T; t++ {
-			rb = append(rb, clp.Bounds{Lower: 0, Upper: float64(s.Clusters[j].CPU)}) //capacity limit
+			rb = append(rb, clp.Bounds{Lower: 0, Upper: float64(s.Clusters[j].CPU)}) //cpu capacity limit
 		}
 	}
-
+	for j := 0; j < M; j++ {
+		for t := 0; t < T; t++ {
+			rb = append(rb, clp.Bounds{Lower: 0, Upper: float64(s.Clusters[j].GPU)}) //gpu capacity limit
+		}
+	}
 	for i := 0; i < N; i++ {
 		for j := 0; j < M; j++ {
 			for t := 0; t < int(s.T); t++ {
@@ -328,18 +468,23 @@ func (s *Scheduler) Optimize() []int {
 	simp.Primal(clp.NoValuesPass, clp.NoStartFinishOptions)
 	//val := simp.ObjectiveValue()
 	soln := simp.PrimalColumnSolution()
-	f := .5
 	for i := 0; i < N; i++ {
-		Targets[i] = -1
+
 		for j := 0; j < M; j++ {
 			for t := 0; t < T; t++ {
-				if soln[i*M*T+j*T+t] > f {
-					Targets[i] = j
+				if soln[i*M*T+j*T+t] > 0 {
+
+					SchedulingDecisions[i].i = i
+					SchedulingDecisions[i].j = j
+					SchedulingDecisions[i].t = t
+					SchedulingDecisions[i].xbar = soln[i*M*T+j*T+t]
+					//Targets[i] = j
+
 				}
 			}
 		}
 	}
-	return Targets
+	return SchedulingDecisions
 }
 
 // Aggregated request by AppWrapper
