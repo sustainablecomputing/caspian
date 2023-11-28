@@ -16,8 +16,9 @@ func main() {
 
 	period_length := time.Duration(core.DefaultRevisitTime)
 	var kube_contxt string
-
+	var optimizer string
 	flag.StringVar(&kube_contxt, "kube-context", "kind-hub", "The Kubernetes context.")
+	flag.StringVar(&optimizer, "optimizer", "sustainable", "Optimizer.")
 
 	flag.Parse()
 	conf, err := config.GetConfigWithContext(kube_contxt)
@@ -31,7 +32,7 @@ func main() {
 
 	for {
 		M.UpdateClusterInfo()
-		S.Schedule()
+		S.Schedule(optimizer)
 		time.Sleep(period_length)
 	}
 
