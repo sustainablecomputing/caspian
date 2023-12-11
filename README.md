@@ -16,6 +16,11 @@ Caspian uses MicroMCAD as a Workload queueing and multi-cluster management platf
 ![caspian-mcad](https://github.com/sustainablecomputing/caspian/assets/34821570/32d1b7e5-c7eb-4cc8-8ce8-d1f1a87b0901)
 
 ##  Installation and Setup
+### Prerequisites: Install clp
+```
+brew install clp
+``` 
+
 ### Running outside a cluster
 This section explains how to run MCAD and Caspian locally. You’ll need a Kubernetes cluster (as hub) to run against. You can use KIND to get a local cluster for testing, or run against a remote cluster. You will also need a minimum one kubernetes cluster (as spoke) for dispatching workloads.
 
@@ -36,7 +41,7 @@ go run ./cmd/main.go --kube-context=kind-hub --mode=dispatcher --metrics-bind-ad
 
 ```
 
-- **Step 4: Run MicroMCAD against each spoke cluster in runner mode.**
+- **Step 4: Run MCAD against each spoke cluster in runner mode.**
 ```
 cd mcad
 go run ./cmd/main.go --kube-context=kind-spoke1 --mode=runner --metrics-bind-address=127.0.0.1:8082 --health-probe-bind-address=127.0.0.1:8083 --clusterinfo-name=spoke1
