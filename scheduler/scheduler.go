@@ -166,6 +166,7 @@ func (s *Scheduler) GetClustersInfo() {
 	fmt.Println("\nList of Spoke Clusters ")
 	fmt.Println("Name \t Available CPU \t Available GPU \t GeoLocation  ")
 	for _, cluster := range result.Items {
+		slope, _ := strconv.ParseFloat(cluster.Spec.PowerSlope, 64)
 		weight := core.NewWeights2(cluster.Status.Capacity)
 		newCluster := core.Cluster{
 			Name:        cluster.Name,
@@ -173,6 +174,7 @@ func (s *Scheduler) GetClustersInfo() {
 			Carbon:      make([]float64, s.T),
 			CPU:         weight["cpu"],
 			GPU:         weight["nvidia.com/gpu"],
+			PowerSlope:  slope,
 		}
 		for t := 0; t < s.T; t++ {
 			newCluster.Carbon[t], _ = strconv.ParseFloat(cluster.Spec.Carbon[t], 64)
@@ -318,7 +320,7 @@ func (s *Scheduler) Optimize(sustainable bool) []int {
 				obj[i*M*T+j*T+t] = 0
 				if sustainable {
 					for tt := t; tt < T; tt++ {
-						obj[i*T*M+j*T+t] += (s.Jobs[i].CPU + s.Jobs[i].GPU) / (coeff * s.Clusters[j].Carbon[tt])
+						obj[i*T*M+j*T+t] += (s.Jobs[i].CPU + s.Jobs[i].GPU) / (coeff * s.Clusters[j].Carbon[tt] * s.Clusters[j].PowerSlope)
 						if tt > t+int(s.Jobs[i].RemainTime) {
 							break
 						}

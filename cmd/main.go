@@ -17,7 +17,7 @@ func main() {
 	period_length := time.Duration(core.DefaultRevisitTime)
 	var kube_contxt string
 	var optimizer string
-	flag.StringVar(&kube_contxt, "kube-context", "kind-hub", "The Kubernetes context.")
+	flag.StringVar(&kube_contxt, "kube-context", "k3d-hub", "The Kubernetes context.")
 	flag.StringVar(&optimizer, "optimizer", "sustainable", "Optimizer.")
 
 	flag.Parse()

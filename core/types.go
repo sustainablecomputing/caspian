@@ -12,6 +12,7 @@ type Cluster struct {
 	Carbon      []float64
 	CPU         float64
 	GPU         float64
+	PowerSlope  float64
 }
 
 type Job struct {
