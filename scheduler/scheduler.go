@@ -108,7 +108,7 @@ func (s *Scheduler) GetAppWrappers() {
 				aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Failed") {
 				TimeDispatched += int64(time.Since(aw.Spec.DispatcherStatus.LastDispatchingTime.Time).Seconds())
 			}
-
+			TimeDispatched += 20 //add a bit more
 			//TimeDispatched = aw.Spec.DispatcherStatus.TimeDispatched
 
 			remainTime := int64(math.Ceil(float64(aw.Spec.Sustainable.RunTime-TimeDispatched) / float64(s.PeriodLength)))
@@ -166,7 +166,7 @@ func (s *Scheduler) GetClustersInfo() {
 	fmt.Println("\nList of Spoke Clusters ")
 	fmt.Println("Name \t Available CPU \t Available GPU \t GeoLocation  ")
 	for _, cluster := range result.Items {
-		slope, _ := strconv.ParseFloat(cluster.Spec.PowerSlope, 64)
+		slope := 1.0 // strconv.ParseFloat(cluster.Spec.PowerSlope, 64)
 		weight := core.NewWeights2(cluster.Status.Capacity)
 		newCluster := core.Cluster{
 			Name:        cluster.Name,
@@ -302,32 +302,50 @@ func (s *Scheduler) Optimize(sustainable bool) []int {
 	N := s.N
 	M := s.M
 	T := s.T
+	omega1 := 0.0
+	omega2 := 1.0
+	theta1 := 1.0
+	theta2 := 1.0
+	obj1 := make([]float64, N*M*T)
+	obj2 := make([]float64, N*M*T)
 	obj := make([]float64, N*M*T)
 	Available_GPU := make([]float64, M*T)
 	Available_CPU := make([]float64, M*T)
 	Targets := make([]int, N)
 	Objectives := make([][]Objective, N)
 	for i := 0; i < N; i++ {
+		for j := 0; j < M; j++ {
+			for t := 0; t < T; t++ {
+				lateness := float64(t) + float64(s.Jobs[i].RemainTime-s.Jobs[i].Deadline)
+				if lateness < 0 {
+					lateness = 0
+				}
+
+				obj1[i*M*T+j*T+t] = 0
+
+				for tt := t; tt < min(s.T, t+int(s.Jobs[i].RemainTime)); tt++ {
+					obj1[i*T*M+j*T+t] += (s.Jobs[i].CPU + s.Jobs[i].GPU) / (s.Clusters[j].Carbon[tt] * s.Clusters[j].PowerSlope)
+				}
+				obj2[i*M*T+j*T+t] = float64(1.0 / (float64(t) + float64(s.Jobs[i].RemainTime) + lateness))
+				fmt.Println(obj1[i*T*M+j*T+t], obj2[i*T*M+j*T+t], "fff")
+			}
+		}
+	}
+
+	if sustainable {
+		omega1 = .5
+		omega2 = .5
+		_, theta1 = s.LPSolve(obj1)
+		_, theta2 = s.LPSolve(obj2)
+		fmt.Println(theta1, theta2, "lll")
+	}
+	for i := 0; i < N; i++ {
 		cnt := 0
 		Objectives[i] = make([]Objective, M*T)
 		for j := 0; j < M; j++ {
-			coeff := 1.0
 			for t := 0; t < T; t++ {
-				if int64(t)+s.Jobs[i].RemainTime > s.Jobs[i].Deadline {
-
-					coeff += math.Log(1 + float64(int64(t)+s.Jobs[i].RemainTime-s.Jobs[i].Deadline))
-				}
-				obj[i*M*T+j*T+t] = 0
-				if sustainable {
-					for tt := t; tt < T; tt++ {
-						obj[i*T*M+j*T+t] += (s.Jobs[i].CPU + s.Jobs[i].GPU) / (coeff * s.Clusters[j].Carbon[tt] * s.Clusters[j].PowerSlope)
-						if tt > t+int(s.Jobs[i].RemainTime) {
-							break
-						}
-					}
-				} else {
-					obj[i*M*T+j*T+t] = float64(1 / (1 + int64(t) + s.Jobs[i].RemainTime))
-				}
+				obj[i*M*T+j*T+t] = omega1*obj1[i*M*T+j*T+t]/theta1 + omega2*obj2[i*M*T+j*T+t]/theta2
+				fmt.Println(omega1*obj1[i*M*T+j*T+t]/theta1, omega2*obj2[i*M*T+j*T+t]/theta2, "kkk")
 				Objectives[i][cnt].j = j
 				Objectives[i][cnt].t = t
 				Objectives[i][cnt].val = obj[i*T*M+j*T+t]
@@ -339,10 +357,9 @@ func (s *Scheduler) Optimize(sustainable bool) []int {
 		sort.Slice(Objectives[i], func(h, k int) bool {
 			return Objectives[i][h].val > Objectives[i][k].val
 		})
-
 	}
 
-	SchedulingDecisions := s.LPSolve(obj)
+	SchedulingDecisions, _ := s.LPSolve(obj)
 
 	sort.Slice(SchedulingDecisions, func(i, j int) bool {
 		return SchedulingDecisions[i].xbar > SchedulingDecisions[j].xbar
@@ -395,12 +412,13 @@ func (s *Scheduler) Optimize(sustainable bool) []int {
 
 }
 
-func (s *Scheduler) LPSolve(obj []float64) []SchedulingDecision {
+func (s *Scheduler) LPSolve(obj []float64) ([]SchedulingDecision, float64) {
 
 	N := s.N
 	M := s.M
 	T := s.T
 	SchedulingDecisions := make([]SchedulingDecision, N)
+	OPT := 0.0
 	// Set up the problem.
 
 	rb := []clp.Bounds{}
@@ -428,14 +446,7 @@ func (s *Scheduler) LPSolve(obj []float64) []SchedulingDecision {
 					}
 				}
 				mat.AppendColumn(tmp)
-				/*coeff := math.Log(1000 - float64(s.Jobs[i].Deadline-s.Jobs[i].RemainTime))
-				obj[i*M*T+j*T+t] = 0
-				for tt := t; tt < T; tt++ {
-					obj[i*T*M+j*T+t] += (s.Jobs[i].CPU + s.Jobs[i].GPU) / (coeff * s.Clusters[j].Carbon[tt]) ///
-					if tt < t+int(s.Jobs[i].RemainTime) {
-						break
-					}
-				}*/
+
 			}
 		}
 	}
@@ -468,25 +479,23 @@ func (s *Scheduler) LPSolve(obj []float64) []SchedulingDecision {
 
 	// Solve the optimization problem.
 	simp.Primal(clp.NoValuesPass, clp.NoStartFinishOptions)
-	//val := simp.ObjectiveValue()
+	OPT = simp.ObjectiveValue()
 	soln := simp.PrimalColumnSolution()
 	for i := 0; i < N; i++ {
-
+		SchedulingDecisions[i].i = i
+		SchedulingDecisions[i].j = -1
+		SchedulingDecisions[i].xbar = 0
 		for j := 0; j < M; j++ {
 			for t := 0; t < T; t++ {
 				if soln[i*M*T+j*T+t] > 0 {
-
-					SchedulingDecisions[i].i = i
-					SchedulingDecisions[i].j = j
 					SchedulingDecisions[i].t = t
+					SchedulingDecisions[i].j = j
 					SchedulingDecisions[i].xbar = soln[i*M*T+j*T+t]
-					//Targets[i] = j
-
 				}
 			}
 		}
 	}
-	return SchedulingDecisions
+	return SchedulingDecisions, OPT
 }
 
 // Aggregated request by AppWrapper
