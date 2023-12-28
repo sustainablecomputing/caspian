@@ -101,11 +101,9 @@ func (s *Scheduler) GetAppWrappers() {
 		if aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Queued") ||
 			aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Running") ||
 			aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Dispatching") ||
-			aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Requeuing") ||
-			aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Failed") { //aw.Spec.Sustainable &&
+			aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Requeuing") { //aw.Spec.Sustainable &&
 			TimeDispatched := aw.Spec.DispatcherStatus.TimeDispatched //+
-			if aw.Spec.DispatcherStatus.Phase != mcadv1beta1.AppWrapperPhase("Queued") ||
-				aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Failed") {
+			if aw.Spec.DispatcherStatus.Phase != mcadv1beta1.AppWrapperPhase("Queued") {
 				TimeDispatched += int64(time.Since(aw.Spec.DispatcherStatus.LastDispatchingTime.Time).Seconds())
 			}
 			TimeDispatched += 20 //add a bit more
@@ -166,8 +164,11 @@ func (s *Scheduler) GetClustersInfo() {
 	fmt.Println("\nList of Spoke Clusters ")
 	fmt.Println("Name \t Available CPU \t Available GPU \t GeoLocation  ")
 	for _, cluster := range result.Items {
-		slope := 1.0 // strconv.ParseFloat(cluster.Spec.PowerSlope, 64)
+		slope, _ := strconv.ParseFloat(cluster.Spec.PowerSlope, 64)
 		weight := core.NewWeights2(cluster.Status.Capacity)
+		if weight["nvidia.com/gpu"] > 16 { //temporar
+			weight["nvidia.com/gpu"] = weight["nvidia.com/gpu"] - 16
+		}
 		newCluster := core.Cluster{
 			Name:        cluster.Name,
 			GeoLocation: cluster.Spec.Geolocation,
@@ -327,17 +328,17 @@ func (s *Scheduler) Optimize(sustainable bool) []int {
 					obj1[i*T*M+j*T+t] += (s.Jobs[i].CPU + s.Jobs[i].GPU) / (s.Clusters[j].Carbon[tt] * s.Clusters[j].PowerSlope)
 				}
 				obj2[i*M*T+j*T+t] = float64(1.0 / (float64(t) + float64(s.Jobs[i].RemainTime) + lateness))
-				fmt.Println(obj1[i*T*M+j*T+t], obj2[i*T*M+j*T+t], "fff")
+				//fmt.Println(obj1[i*T*M+j*T+t], obj2[i*T*M+j*T+t], "fff")
 			}
 		}
 	}
 
 	if sustainable {
-		omega1 = .5
+		omega1 = 1
 		omega2 = .5
 		_, theta1 = s.LPSolve(obj1)
 		_, theta2 = s.LPSolve(obj2)
-		fmt.Println(theta1, theta2, "lll")
+		//fmt.Println(theta1, theta2, "lll")
 	}
 	for i := 0; i < N; i++ {
 		cnt := 0
@@ -345,7 +346,7 @@ func (s *Scheduler) Optimize(sustainable bool) []int {
 		for j := 0; j < M; j++ {
 			for t := 0; t < T; t++ {
 				obj[i*M*T+j*T+t] = omega1*obj1[i*M*T+j*T+t]/theta1 + omega2*obj2[i*M*T+j*T+t]/theta2
-				fmt.Println(omega1*obj1[i*M*T+j*T+t]/theta1, omega2*obj2[i*M*T+j*T+t]/theta2, "kkk")
+				//fmt.Println(omega1*obj1[i*M*T+j*T+t]/theta1, omega2*obj2[i*M*T+j*T+t]/theta2, "kkk")
 				Objectives[i][cnt].j = j
 				Objectives[i][cnt].t = t
 				Objectives[i][cnt].val = obj[i*T*M+j*T+t]
