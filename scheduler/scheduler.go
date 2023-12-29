@@ -81,6 +81,7 @@ func NewScheduler(config *rest.Config) *Scheduler {
 // Calculate requested resources  of each AW.
 // Save all AWs with their characteristics in Jobs array
 func (s *Scheduler) GetAppWrappers() {
+	cc := 0.0
 	result := mcadv1beta1.AppWrapperList{}
 	s.Jobs = []core.Job{}
 	err := s.crdClient.
@@ -97,7 +98,12 @@ func (s *Scheduler) GetAppWrappers() {
 	for _, aw := range result.Items {
 
 		// Aggregated request by AppWrapper
-
+		if aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Succeeded") {
+			//cc += (aw.Status.RunnerStatus.LastRunningTime.Time.Sub(aw.CreationTimestamp.Time)).Seconds()
+			lenn := len(aw.Spec.DispatcherStatus.Transitions)
+			cc += aw.Spec.DispatcherStatus.Transitions[lenn-1].Time.Sub(aw.CreationTimestamp.Time).Seconds()
+			//cc += (time.Since(aw.CreationTimestamp.Time).Seconds())
+		}
 		if aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Queued") ||
 			aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Running") ||
 			aw.Spec.DispatcherStatus.Phase == mcadv1beta1.AppWrapperPhase("Dispatching") ||
@@ -135,6 +141,9 @@ func (s *Scheduler) GetAppWrappers() {
 			if remainTime <= 0 {
 				//fmt.Println("\n Suspendind Appwrapper ", aw.Name)
 				//s.DeleteAppWrapper(aw.Name)
+				//cc += (aw.Status.RunnerStatus.LastRequeuingTime.Time.Sub(aw.CreationTimestamp.Time)).Seconds()
+				lenn := len(aw.Spec.DispatcherStatus.Transitions)
+				cc += aw.Spec.DispatcherStatus.Transitions[lenn-1].Time.Sub(aw.CreationTimestamp.Time).Seconds()
 				s.PutHoldOnAppWrapper(newJob)
 			} else {
 				s.N = s.N + 1
@@ -145,7 +154,7 @@ func (s *Scheduler) GetAppWrappers() {
 		}
 
 	}
-
+	fmt.Println("Completion time::", cc)
 }
 
 // get all clusterinfos in hub
@@ -166,9 +175,7 @@ func (s *Scheduler) GetClustersInfo() {
 	for _, cluster := range result.Items {
 		slope, _ := strconv.ParseFloat(cluster.Spec.PowerSlope, 64)
 		weight := core.NewWeights2(cluster.Status.Capacity)
-		if weight["nvidia.com/gpu"] > 16 { //temporar
-			weight["nvidia.com/gpu"] = weight["nvidia.com/gpu"] - 16
-		}
+
 		newCluster := core.Cluster{
 			Name:        cluster.Name,
 			GeoLocation: cluster.Spec.Geolocation,
@@ -317,17 +324,18 @@ func (s *Scheduler) Optimize(sustainable bool) []int {
 	for i := 0; i < N; i++ {
 		for j := 0; j < M; j++ {
 			for t := 0; t < T; t++ {
+
 				lateness := float64(t) + float64(s.Jobs[i].RemainTime-s.Jobs[i].Deadline)
-				if lateness < 0 {
+				if lateness <= 0 {
 					lateness = 0
 				}
 
 				obj1[i*M*T+j*T+t] = 0
 
 				for tt := t; tt < min(s.T, t+int(s.Jobs[i].RemainTime)); tt++ {
-					obj1[i*T*M+j*T+t] += (s.Jobs[i].CPU + s.Jobs[i].GPU) / (s.Clusters[j].Carbon[tt] * s.Clusters[j].PowerSlope)
+					obj1[i*T*M+j*T+t] += (s.Jobs[i].GPU) / (s.Clusters[j].GPU * s.Clusters[j].Carbon[tt] * s.Clusters[j].PowerSlope)
 				}
-				obj2[i*M*T+j*T+t] = float64(1.0 / (float64(t) + float64(s.Jobs[i].RemainTime) + lateness))
+				obj2[i*M*T+j*T+t] = 1.0 / (float64(t) + float64(s.Jobs[i].RemainTime) + (1 + math.Log2(1+lateness)))
 				//fmt.Println(obj1[i*T*M+j*T+t], obj2[i*T*M+j*T+t], "fff")
 			}
 		}
@@ -335,7 +343,7 @@ func (s *Scheduler) Optimize(sustainable bool) []int {
 
 	if sustainable {
 		omega1 = 1
-		omega2 = .5
+		omega2 = 5
 		_, theta1 = s.LPSolve(obj1)
 		_, theta2 = s.LPSolve(obj2)
 		//fmt.Println(theta1, theta2, "lll")
@@ -346,7 +354,7 @@ func (s *Scheduler) Optimize(sustainable bool) []int {
 		for j := 0; j < M; j++ {
 			for t := 0; t < T; t++ {
 				obj[i*M*T+j*T+t] = omega1*obj1[i*M*T+j*T+t]/theta1 + omega2*obj2[i*M*T+j*T+t]/theta2
-				//fmt.Println(omega1*obj1[i*M*T+j*T+t]/theta1, omega2*obj2[i*M*T+j*T+t]/theta2, "kkk")
+				//fmt.Println(i, j, t, omega1*obj1[i*M*T+j*T+t]/theta1, omega2*obj2[i*M*T+j*T+t]/theta2, "kkk")
 				Objectives[i][cnt].j = j
 				Objectives[i][cnt].t = t
 				Objectives[i][cnt].val = obj[i*T*M+j*T+t]
@@ -382,7 +390,7 @@ func (s *Scheduler) Optimize(sustainable bool) []int {
 				t = Objectives[i][cnt].t
 
 				found = true
-				for tt := t; tt < t+int(s.Jobs[i].RemainTime); tt++ {
+				for tt := t; tt < min(s.T, t+int(s.Jobs[i].RemainTime)); tt++ {
 					if Available_GPU[j*T+tt] < s.Jobs[i].GPU || Available_CPU[j*T+tt] < s.Jobs[i].CPU {
 						//	fmt.Println(i, j, t, "llll")
 						found = false
