@@ -342,8 +342,8 @@ func (s *Scheduler) Optimize(sustainable bool) []int {
 	}
 
 	if sustainable {
-		omega1 = 1
-		omega2 = 5
+		omega1 = 3
+		omega2 = 3
 		_, theta1 = s.LPSolve(obj1)
 		_, theta2 = s.LPSolve(obj2)
 		//fmt.Println(theta1, theta2, "lll")
@@ -410,7 +410,7 @@ func (s *Scheduler) Optimize(sustainable bool) []int {
 				Targets[i] = j
 			}
 
-			for tt := t; tt < t+int(s.Jobs[i].RemainTime); tt++ {
+			for tt := t; tt < min(s.T, t+int(s.Jobs[i].RemainTime)); tt++ {
 				Available_GPU[j*T+tt] -= s.Jobs[i].GPU
 				Available_CPU[j*T+tt] -= s.Jobs[i].CPU
 
