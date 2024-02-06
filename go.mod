@@ -4,7 +4,7 @@ go 1.21.0
 
 require k8s.io/kubectl v0.28.3
 
-require github.com/tayebehbahreini/mcad v0.0.0-20231226201741-eea5f663f377
+require github.com/tayebehbahreini/mcad v0.0.0-20240205201743-a27a5d94baf5
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect

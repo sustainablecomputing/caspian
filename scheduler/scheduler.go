@@ -173,7 +173,9 @@ func (s *Scheduler) GetClustersInfo() {
 	fmt.Println("\nList of Spoke Clusters ")
 	fmt.Println("Name \t Available CPU \t Available GPU \t GeoLocation  ")
 	for _, cluster := range result.Items {
-		slope, _ := strconv.ParseFloat(cluster.Spec.PowerSlope, 64)
+		idle, _ := strconv.ParseFloat(cluster.Spec.PowerIdle, 64)
+		peak, _ := strconv.ParseFloat(cluster.Spec.PowerPeak, 64)
+		slope := (peak - idle) / 100.0
 		weight := core.NewWeights2(cluster.Status.Capacity)
 
 		newCluster := core.Cluster{
