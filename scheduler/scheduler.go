@@ -154,7 +154,7 @@ func (s *Scheduler) GetAppWrappers() {
 		}
 
 	}
-	fmt.Println("Completion time::", cc)
+	//fmt.Println("Completion time::", cc)
 }
 
 // get all clusterinfos in hub
