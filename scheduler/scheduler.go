@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/rand"
 	"sort"
 	"strconv"
 	"time"
@@ -49,12 +50,12 @@ var AWResource = schema.GroupVersionResource{Group: mcadv1beta1.GroupVersion.Gro
 
 // NewDispatcher : create a new dispather instance and
 // configure the clients with kube_config and hub-context
-func NewScheduler(config *rest.Config) *Scheduler {
+func NewScheduler(config *rest.Config, periodLength int) *Scheduler {
 	s := &Scheduler{
 		N:            0,
 		M:            0,
 		T:            core.DefaultT,
-		PeriodLength: core.DefaultSlotLength,
+		PeriodLength: periodLength,
 		Jobs:         []core.Job{},
 		Clusters:     []core.Cluster{},
 		crdClient:    &rest.RESTClient{},
@@ -94,7 +95,7 @@ func (s *Scheduler) GetAppWrappers() {
 	}
 	s.N = 0
 	fmt.Println("\nList of Appwrappers ")
-	fmt.Println("Name\t CPU\t GPU\t RemainTime  \t Deadline \t \t \t Status ")
+	fmt.Println("Name\t CPU\t GPU\t RemainTime  \t Deadline \t \t  Status ")
 	for _, aw := range result.Items {
 
 		// Aggregated request by AppWrapper
@@ -112,8 +113,7 @@ func (s *Scheduler) GetAppWrappers() {
 			if aw.Spec.DispatcherStatus.Phase != mcadv1beta1.AppWrapperPhase("Queued") {
 				TimeDispatched += int64(time.Since(aw.Spec.DispatcherStatus.LastDispatchingTime.Time).Seconds())
 			}
-			TimeDispatched += 20 //add a bit more
-			//TimeDispatched = aw.Spec.DispatcherStatus.TimeDispatched
+			//TimeDispatched -= 40 //add a bit more
 
 			remainTime := int64(math.Ceil(float64(aw.Spec.Sustainable.RunTime-TimeDispatched) / float64(s.PeriodLength)))
 			if aw.Spec.Sustainable.RunTime == 0 { //runtime is not specified by user
@@ -123,7 +123,7 @@ func (s *Scheduler) GetAppWrappers() {
 			deadline := int64(s.T)
 			if !aw.Spec.Sustainable.Deadline.IsZero() { //deadline is not specified by user
 
-				deadline = 0 - int64(math.Ceil(float64(time.Now().Sub(aw.Spec.Sustainable.Deadline.Time).Seconds()))/float64(s.PeriodLength))
+				deadline = 1 - int64(math.Ceil(float64(time.Now().Sub(aw.Spec.Sustainable.Deadline.Time).Seconds()))/float64(s.PeriodLength))
 
 			}
 			//if
@@ -135,10 +135,10 @@ func (s *Scheduler) GetAppWrappers() {
 				Namespace:  aw.Namespace,
 				CPU:        awRequest["cpu"],
 				GPU:        awRequest["nvidia.com/gpu"],
-				RemainTime: remainTime,
+				RemainTime: max(1, remainTime),
 				Deadline:   deadline,
 			}
-			if remainTime <= 0 {
+			if remainTime < 0 { //tolerance:0 time slots
 				//fmt.Println("\n Suspendind Appwrapper ", aw.Name)
 				//s.DeleteAppWrapper(aw.Name)
 				//cc += (aw.Status.RunnerStatus.LastRequeuingTime.Time.Sub(aw.CreationTimestamp.Time)).Seconds()
@@ -148,7 +148,7 @@ func (s *Scheduler) GetAppWrappers() {
 			} else {
 				s.N = s.N + 1
 				s.Jobs = append(s.Jobs, newJob)
-				fmt.Println(aw.Name, "\t", newJob.CPU, "\t", newJob.GPU, "\t", newJob.RemainTime, "\t\t", deadline, "\t", aw.Spec.DispatcherStatus.Phase)
+				fmt.Println(aw.Name, "\t", newJob.CPU, "\t", newJob.GPU, "\t", newJob.RemainTime, "\t\t", deadline, "\t\t\t", aw.Spec.DispatcherStatus.Phase)
 			}
 
 		}
@@ -172,6 +172,7 @@ func (s *Scheduler) GetClustersInfo() {
 	j := 0
 	fmt.Println("\nList of Spoke Clusters ")
 	fmt.Println("Name \t Available CPU \t Available GPU \t GeoLocation  ")
+	local_Clusters := []core.Cluster{}
 	for _, cluster := range result.Items {
 		idle, _ := strconv.ParseFloat(cluster.Spec.PowerIdle, 64)
 		peak, _ := strconv.ParseFloat(cluster.Spec.PowerPeak, 64)
@@ -189,12 +190,18 @@ func (s *Scheduler) GetClustersInfo() {
 		for t := 0; t < s.T; t++ {
 			newCluster.Carbon[t], _ = strconv.ParseFloat(cluster.Spec.Carbon[t], 64)
 		}
-		s.Clusters = append(s.Clusters, newCluster)
+		local_Clusters = append(local_Clusters, newCluster)
 		fmt.Println(newCluster.Name, "\t", newCluster.CPU, "\t\t", newCluster.GPU, "\t\t", newCluster.GeoLocation)
 
 		j = j + 1
 	}
 	s.M = len(result.Items)
+	for _, jj := range rand.Perm(s.M) {
+
+		// Displaying the result
+		//fmt.Println("Slice 2 Element: ", jj)
+		s.Clusters = append(s.Clusters, local_Clusters[jj])
+	}
 
 }
 
@@ -287,11 +294,14 @@ func (s *Scheduler) RemoveGateFromAW(Job core.Job, TargetCluster string) error {
 func (s *Scheduler) Schedule(optimizer string) {
 	sustainable := false
 	if optimizer == "sustainable" {
+
 		sustainable = true
 	}
 	s.GetAppWrappers()
 	s.GetClustersInfo()
 	fmt.Println("\nDecision made by the optimizer:")
+	threshold := -6
+
 	if s.N > 0 && s.M > 0 {
 
 		Targets := s.Optimize(sustainable)
@@ -299,7 +309,13 @@ func (s *Scheduler) Schedule(optimizer string) {
 		for i := 0; i < s.N; i++ {
 
 			if Targets[i] < 0 {
-				s.PutHoldOnAppWrapper(s.Jobs[i])
+				if int(s.Jobs[i].Deadline) < threshold {
+					j := rand.Intn(s.M)
+					s.RemoveGateFromAW(s.Jobs[i], s.Clusters[j].Name)
+
+				} else {
+					s.PutHoldOnAppWrapper(s.Jobs[i])
+				}
 
 			} else {
 				s.RemoveGateFromAW(s.Jobs[i], s.Clusters[Targets[i]].Name)
@@ -314,22 +330,26 @@ func (s *Scheduler) Optimize(sustainable bool) []int {
 	T := s.T
 	omega1 := 0.0
 	omega2 := 1.0
+	omega3 := 1.0
 	theta1 := 1.0
 	theta2 := 1.0
+	theta3 := 1.0
 	obj1 := make([]float64, N*M*T)
 	obj2 := make([]float64, N*M*T)
+	obj3 := make([]float64, N*M*T)
 	obj := make([]float64, N*M*T)
 	Available_GPU := make([]float64, M*T)
 	Available_CPU := make([]float64, M*T)
 	Targets := make([]int, N)
 	Objectives := make([][]Objective, N)
+
 	for i := 0; i < N; i++ {
 		for j := 0; j < M; j++ {
 			for t := 0; t < T; t++ {
 
 				lateness := float64(t) + float64(s.Jobs[i].RemainTime-s.Jobs[i].Deadline)
 				if lateness <= 0 {
-					lateness = 0
+					lateness = 1
 				}
 
 				obj1[i*M*T+j*T+t] = 0
@@ -337,17 +357,23 @@ func (s *Scheduler) Optimize(sustainable bool) []int {
 				for tt := t; tt < min(s.T, t+int(s.Jobs[i].RemainTime)); tt++ {
 					obj1[i*T*M+j*T+t] += (s.Jobs[i].GPU) / (s.Clusters[j].GPU * s.Clusters[j].Carbon[tt] * s.Clusters[j].PowerSlope)
 				}
-				obj2[i*M*T+j*T+t] = 1.0 / (float64(t) + float64(s.Jobs[i].RemainTime) + (1 + math.Log2(1+lateness)))
+
+				obj2[i*M*T+j*T+t] = 1 / (float64(t) + float64(s.Jobs[i].RemainTime))
+				obj3[i*M*T+j*T+t] = 1 / lateness
+
 				//fmt.Println(obj1[i*T*M+j*T+t], obj2[i*T*M+j*T+t], "fff")
 			}
 		}
 	}
 
 	if sustainable {
-		omega1 = 3
+
+		omega1 = 0
+		omega2 = 1
 		omega2 = 3
 		_, theta1 = s.LPSolve(obj1)
 		_, theta2 = s.LPSolve(obj2)
+		_, theta3 = s.LPSolve(obj3)
 		//fmt.Println(theta1, theta2, "lll")
 	}
 	for i := 0; i < N; i++ {
@@ -355,7 +381,12 @@ func (s *Scheduler) Optimize(sustainable bool) []int {
 		Objectives[i] = make([]Objective, M*T)
 		for j := 0; j < M; j++ {
 			for t := 0; t < T; t++ {
-				obj[i*M*T+j*T+t] = omega1*obj1[i*M*T+j*T+t]/theta1 + omega2*obj2[i*M*T+j*T+t]/theta2
+				if sustainable {
+					obj[i*M*T+j*T+t] = omega1*obj1[i*M*T+j*T+t]/theta1 + omega2*obj2[i*M*T+j*T+t]/theta2 + omega3*obj3[i*M*T+j*T+t]/theta3
+				} else {
+					obj[i*M*T+j*T+t] = omega2*obj2[i*M*T+j*T+t] + omega3*obj3[i*M*T+j*T+t]/theta3
+
+				}
 				//fmt.Println(i, j, t, omega1*obj1[i*M*T+j*T+t]/theta1, omega2*obj2[i*M*T+j*T+t]/theta2, "kkk")
 				Objectives[i][cnt].j = j
 				Objectives[i][cnt].t = t

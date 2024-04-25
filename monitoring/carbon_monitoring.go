@@ -32,7 +32,7 @@ type Monitor struct {
 }
 
 // NewMonior creates a Monitor instance and configures its clients.
-func NewMonitor(config *rest.Config) *Monitor {
+func NewMonitor(config *rest.Config,) *Monitor {
 	m := &Monitor{
 		Spokes:    []core.Cluster{},
 		crdClient: &rest.RESTClient{},

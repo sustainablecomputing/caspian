@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/sustainablecomputing/caspian/core"
@@ -28,9 +29,10 @@ func main() {
 		fmt.Println(err, "Unable to get kubeconfig")
 		os.Exit(1)
 	}
-
-	S := scheduler.NewScheduler(conf)
+	int_length, _ := strconv.Atoi(period_length)
+	S := scheduler.NewScheduler(conf, int_length)
 	M := monitoring.NewMonitor(conf)
+	periodLength = time.Duration(int_length * 1000000000)
 
 	for {
 		M.UpdateClusterInfo()
