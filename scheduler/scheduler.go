@@ -368,9 +368,9 @@ func (s *Scheduler) Optimize(sustainable bool) []int {
 
 	if sustainable {
 
-		omega1 = 0
+		omega1 = 1
 		omega2 = 1
-		omega2 = 3
+		omega2 = 1
 		_, theta1 = s.LPSolve(obj1)
 		_, theta2 = s.LPSolve(obj2)
 		_, theta3 = s.LPSolve(obj3)
